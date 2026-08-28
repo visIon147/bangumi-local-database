@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -8,7 +9,14 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from bangumi_local.db.models import ChangePlan, ChangePlanItem, PlanApplyRun, RemoteOperation
+from bangumi_local.db.models import (
+    ChangePlan,
+    ChangePlanItem,
+    PlanApplyRun,
+    RemoteOperation,
+    UiJob,
+    UiJobPlanLink,
+)
 from bangumi_local.services.plans import PlanError, export_plan, load_plan
 from bangumi_local.services.plan_revisions import revise_plan_selection
 from bangumi_local.web.action_protocol import invalid_action
@@ -31,8 +39,14 @@ def plans_list(
     session: Session = Depends(get_session),
 ) -> HTMLResponse:
     normalized_status = status if status in PLAN_STATUSES else None
-    count_statement = select(func.count()).select_from(ChangePlan)
-    statement = select(ChangePlan).order_by(ChangePlan.created_at.desc(), ChangePlan.id)
+    count_statement = (
+        select(func.count()).select_from(ChangePlan).where(ChangePlan.archived_at.is_(None))
+    )
+    statement = (
+        select(ChangePlan)
+        .where(ChangePlan.archived_at.is_(None))
+        .order_by(ChangePlan.created_at.desc(), ChangePlan.id)
+    )
     if normalized_status:
         count_statement = count_statement.where(ChangePlan.status == normalized_status)
         statement = statement.where(ChangePlan.status == normalized_status)
@@ -78,7 +92,12 @@ def plan_detail(
     disposition: str = Query(""),
     reason: str = Query(""),
     q: str = Query(""),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25),
+    notice: str = Query(""),
 ) -> HTMLResponse:
+    if page_size not in {25, 50, 100}:
+        raise HTTPException(422, "Unsupported page size.")
     try:
         stored = load_plan(session, plan_id)
     except PlanError as exc:
@@ -101,7 +120,7 @@ def plan_detail(
     normalized_disposition = disposition if disposition in {"planned", "unchanged"} else ""
     normalized_reason = reason.strip()
     normalized_q = q.strip().casefold()
-    visible = []
+    all_visible = []
     for candidate in stored.candidates:
         if normalized_disposition and candidate.disposition != normalized_disposition:
             continue
@@ -131,7 +150,7 @@ def plan_detail(
                         ),
                     }
                 )
-        visible.append(
+        all_visible.append(
             {
                 "candidate": candidate,
                 "item_status": row.item_status if row is not None else "not_applicable",
@@ -146,6 +165,28 @@ def plan_detail(
                 "match_candidates": match_candidates,
             }
         )
+    visible_total = len(all_visible)
+    page_count = max(1, (visible_total + page_size - 1) // page_size)
+    if page > page_count:
+        page = page_count
+    visible = all_visible[(page - 1) * page_size : page * page_size]
+    filter_params = {
+        "q": q.strip(),
+        "disposition": normalized_disposition,
+        "reason": normalized_reason,
+        "page_size": str(page_size),
+        "page": str(page),
+    }
+    filter_query = urlencode(filter_params)
+    next_review_url = None
+    for index, presented in enumerate(all_visible):
+        candidate = presented["candidate"]
+        if candidate.selection_evidence.get("review_mode") in {"manual_required", "search_failed"}:
+            review_page = index // page_size + 1
+            identity = candidate.source_entry_id or candidate.subject_id
+            review_params = {**filter_params, "page": str(review_page)}
+            next_review_url = f"/plans/{plan_id}?{urlencode(review_params)}#plan-item-{identity}"
+            break
     selector = json.loads(stored.plan.selector_json)
     visible_subject_ids = {
         item["candidate"].subject_id for item in visible
@@ -158,9 +199,20 @@ def plan_detail(
     )
     successor = session.scalar(
         select(ChangePlan)
-        .where(ChangePlan.selector_json.like(f'%"revision_of_plan_id":"{plan_id}"%'))
+        .where(
+            or_(
+                ChangePlan.selector_json.like(f'%"revision_of_plan_id":"{plan_id}"%'),
+                ChangePlan.selector_json.like(f'%"supersedes_plan_id":"{plan_id}"%'),
+            )
+        )
         .order_by(ChangePlan.created_at.desc())
     )
+    linked_jobs = session.execute(
+        select(UiJobPlanLink, UiJob)
+        .join(UiJob, UiJob.id == UiJobPlanLink.job_id)
+        .where(UiJobPlanLink.plan_id == plan_id)
+        .order_by(UiJobPlanLink.id.desc())
+    ).all()
     return request.app.state.templates.TemplateResponse(
         request=request,
         name="plans/detail.html",
@@ -172,6 +224,7 @@ def plan_detail(
             "hidden_included_ids": hidden_included_ids,
             "selector": selector,
             "successor": successor,
+            "linked_jobs": linked_jobs,
             "revision_supported": stored.plan.kind in {
                 "bulk_add", "bulk_remove", "bulk_rename", "classify_games", "sync",
                 "steam_status", "discovery_status", "pull",
@@ -180,6 +233,16 @@ def plan_detail(
             "reason_filter": normalized_reason,
             "q": q.strip(),
             "reasons": sorted({candidate.reason for candidate in stored.candidates}),
+            "page": page,
+            "page_size": page_size,
+            "page_count": page_count,
+            "visible_total": visible_total,
+            "next_review_url": next_review_url,
+            "filter_query": filter_query,
+            "notice": notice if notice in {
+                "successor", "match-subject", "match-manual_review",
+                "match-no_subject", "match-deferred", "reviewed",
+            } else "",
             "page_title": f"计划 {stored.plan.id}",
         },
     )

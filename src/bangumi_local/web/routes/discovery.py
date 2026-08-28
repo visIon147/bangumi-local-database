@@ -8,7 +8,8 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
-from bangumi_local.domain.models import CollectionStatus
+from bangumi_local.domain.models import CollectionStatus, SubjectType
+from bangumi_local.db.models import BangumiCollectionState, BangumiSubject
 from bangumi_local.services.discovery import (
     DISCOVERY_DECISIONS,
     DiscoveryError,
@@ -28,6 +29,7 @@ from bangumi_local.services.steam_library import SteamLibraryError
 from bangumi_local.services.jobs import enqueue_job
 from bangumi_local.web.dependencies import get_session
 from bangumi_local.web.routes.media import local_media_url
+from bangumi_local.web.presentation import status_label
 
 
 router = APIRouter(prefix="/discovery")
@@ -201,11 +203,33 @@ def discovery_show(
         view = load_discovery_session(session, session_id)
     except DiscoveryError as exc:
         raise _error(exc, 404) from None
-    candidates = [
-        {
+    candidates = []
+    for item in view.candidates:
+        subject_id = item.subject_id
+        identity = session.get(BangumiSubject, subject_id) if subject_id is not None else None
+        if identity is None and item.work_id is not None:
+            identity = session.query(BangumiSubject).filter_by(work_id=item.work_id).one_or_none()
+            subject_id = identity.subject_id if identity is not None else subject_id
+        collection = (
+            session.get(BangumiCollectionState, subject_id)
+            if subject_id is not None
+            else None
+        )
+        kind = None
+        if identity is not None:
+            try:
+                kind = SubjectType.parse(identity.subject_type).kind
+            except ValueError:
+                pass
+        candidates.append({
             "row": item,
             "tags": json.loads(item.public_tags_json),
             "evidence": json.loads(item.evidence_json),
+            "collection_status_label": (
+                status_label(collection.bgm_collection_type, kind)
+                if collection is not None
+                else "尚未收藏"
+            ),
             "cover_src": local_media_url(
                 session,
                 request.app.state.settings.media_cache_directory,
@@ -214,9 +238,7 @@ def discovery_show(
                 subject_id=item.subject_id,
                 library_entry_id=item.library_entry_id,
             ),
-        }
-        for item in view.candidates
-    ]
+        })
     if candidates:
         if position is None:
             selected_index = next(
@@ -244,7 +266,12 @@ def discovery_show(
             "next_position": (
                 selected_index + 2 if selected_index + 1 < len(candidates) else None
             ),
-            "decisions": sorted(DISCOVERY_DECISIONS),
+            "decisions": tuple(
+                (value, status_label(value)) for value in sorted(DISCOVERY_DECISIONS)
+            ),
+            "discovery_status_label": status_label(view.session.status),
+            "candidate_status_label": status_label(selected["row"].item_status) if selected else "",
+            "candidate_decision_label": status_label(selected["row"].decision) if selected and selected["row"].decision else "",
             "page_title": f"探索会话 {session_id}",
         },
     )

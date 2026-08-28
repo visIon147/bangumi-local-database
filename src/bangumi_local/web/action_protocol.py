@@ -25,6 +25,13 @@ def invalid_action(request: Request, detail: str, *, status_code: int = 422) -> 
     return request.app.state.templates.TemplateResponse(
         request=request,
         name="actions/error.html",
-        context={"page_title": "操作被拒绝", "detail": detail},
+        context={
+            "page_title": "操作被拒绝",
+            "detail": detail,
+            "status_code": status_code,
+            "request_method": request.method,
+            "request_path": request.url.path,
+            "suggestion": "请核对输入和当前任务或计划状态，然后返回上一页重试。",
+        },
         status_code=status_code,
     )

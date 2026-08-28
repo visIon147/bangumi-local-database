@@ -13,7 +13,8 @@
   <label>分数阈值<input type="number" name="auto_threshold" min="0" max="100" value="95"></label><label>最小 margin<input type="number" name="min_margin" min="0" max="100" value="20"></label><label><input type="checkbox" name="allow_nonexact_auto" value="true"> 允许非精确自动候选</label>
   <label>每项候选数<input type="number" name="limit" min="1" max="50" value="10"></label><label>Offset<input type="number" name="offset" min="0" value="0"></label><label>最大条目<input type="number" name="max_items" min="1" max="250" value="250"></label><label>请求间隔 ms<input type="number" name="request_delay_ms" min="0" value="250"></label>
   <label>候选图片<select name="candidate_image_policy"><option value="none">不登记图片</option><option value="metadata" selected>登记链接，不下载</option><option value="cache">只补齐尚未缓存的候选图</option></select></label>
-  <p class="safety-note">一次最多 250 项；选择范围超过上限时会拒绝，并要求使用 AppIDs、分类或 Offset 稳定分批。人工审核项会在计划工作台展示候选证据。</p>
+  <label>单项失败策略<select name="failure_policy"><option value="fail_fast" selected>终止整批（默认）</option><option value="continue">记录失败并继续</option></select></label>
+  <p class="safety-note">一次最多 250 项。选择“记录失败并继续”后，单项搜索失败会列入“不修改”；连续认证失败会触发熔断，避免重复无效请求。人工审核项会在计划工作台展示候选证据。</p>
   <label><input type="checkbox" name="allow_network" value="true"> 明确允许联网</label><button type="submit">提交后台计划任务</button>
 </form>
 {% endblock %}

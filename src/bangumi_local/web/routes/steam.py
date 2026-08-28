@@ -2,14 +2,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+from urllib.parse import parse_qsl, urlencode
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from bangumi_local.adapters.steam import SteamDataError, detect_steam, read_steam_snapshot
 from bangumi_local.config import Settings
 from bangumi_local.db.models import (
+    ChangePlan,
     LibraryEntry,
     LibraryMatchCandidate,
     MediaBinding,
@@ -40,9 +42,38 @@ from bangumi_local.services.steam_titles import (
     set_manual_title,
 )
 from bangumi_local.web.dependencies import get_session, get_settings
+from bangumi_local.web.routes.media import local_media_url
 
 
 router = APIRouter(prefix="/steam")
+
+_PLAN_RETURN_KEYS = {"q", "disposition", "reason", "page", "page_size"}
+
+
+def _safe_plan_return_query(raw: str) -> str:
+    values: list[tuple[str, str]] = []
+    for key, value in parse_qsl(raw[:1000], keep_blank_values=True):
+        if key not in _PLAN_RETURN_KEYS:
+            continue
+        if key == "disposition" and value not in {"", "planned", "unchanged"}:
+            continue
+        if key == "page_size" and value not in {"25", "50", "100"}:
+            continue
+        if key == "page" and (not value.isdigit() or not 1 <= int(value) <= 10000):
+            continue
+        values.append((key, value[:300]))
+    return urlencode(values)
+
+
+def _successor_url(
+    plan_id: str, *, return_query: str, return_anchor: str, notice: str
+) -> str:
+    values = parse_qsl(_safe_plan_return_query(return_query), keep_blank_values=True)
+    values.append(("notice", notice))
+    target = f"/plans/{plan_id}?{urlencode(values)}"
+    if return_anchor.isdigit():
+        target += f"#plan-item-{return_anchor}"
+    return target
 
 
 @dataclass(frozen=True, slots=True)
@@ -341,19 +372,20 @@ def steam_import_preview(
 @router.get("/collections", response_class=HTMLResponse)
 def steam_collections(
     request: Request,
+    sort: str = Query("name-asc"),
     settings: Settings = Depends(get_settings),
     session: Session = Depends(get_session),
 ) -> HTMLResponse:
     try:
         items: list[SteamCollectionListItem] = list_steam_collections(
-            session, settings.steam_account_id
+            session, settings.steam_account_id, sort=sort
         )
     except SteamLibraryError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from None
     return _template(
         request,
         "steam/collections.html",
-        {"items": tuple(items), "page_title": "Steam 分类"},
+        {"items": tuple(items), "sort": sort, "page_title": "Steam 分类"},
     )
 
 
@@ -458,7 +490,11 @@ def _library_page(
     collection_regex: str | None,
     match_status: str | None,
     unmatched_only: bool,
-) -> HTMLResponse:
+    q: str,
+    sort: str,
+    page: int,
+    page_size: int,
+) -> Response:
     if collection and collection_regex:
         raise HTTPException(status_code=400, detail="Choose collection or collection_regex, not both.")
     try:
@@ -468,11 +504,28 @@ def _library_page(
             collection_name=collection or None,
             collection_regex=collection_regex or None,
             match_status=match_status or None,
+            query=q,
+            sort=sort,
         )
     except (SteamLibraryError, ValueError) as exc:
         raise _bad_request(exc) from None
     if unmatched_only:
         items = [item for item in items if item.match_status != "confirmed"]
+    if page_size not in {12, 24, 48, 96}:
+        raise HTTPException(422, "Unsupported Steam page size.")
+    total = len(items)
+    page_count = max(1, (total + page_size - 1) // page_size)
+    query_pairs = [("q", q), ("sort", sort), ("page_size", page_size)]
+    if collection:
+        query_pairs.append(("collection", collection))
+    if collection_regex:
+        query_pairs.append(("collection_regex", collection_regex))
+    if match_status:
+        query_pairs.append(("match_status", match_status))
+    base_path = "/steam/unmatched" if unmatched_only else "/steam/library"
+    if total and page > page_count:
+        return RedirectResponse(base_path + "?" + urlencode([*query_pairs, ("page", page_count)]), status_code=303)
+    items = items[(page - 1) * page_size : page * page_size]
     account = steam_account(session, settings.steam_account_id)
     cards = []
     for item in items:
@@ -482,22 +535,21 @@ def _library_page(
                 LibraryEntry.external_id == item.app_id,
             )
         )
-        digest = (
-            session.scalar(
-                select(MediaSource.current_blob_sha256)
-                .join(MediaBinding, MediaBinding.media_source_id == MediaSource.id)
-                .where(
-                    MediaBinding.library_entry_id == entry.id,
-                    MediaBinding.role == "cover",
-                    MediaSource.current_blob_sha256.is_not(None),
-                )
-                .order_by(MediaBinding.priority.desc())
-                .limit(1)
-            )
-            if entry is not None
-            else None
+        cards.append(
+            {
+                "row": item,
+                "cover_src": (
+                    local_media_url(
+                        session,
+                        settings.media_cache_directory,
+                        work_id=item.work_id,
+                        library_entry_id=entry.id,
+                    )
+                    if entry is not None
+                    else "/media/placeholder"
+                ),
+            }
         )
-        cards.append({"row": item, "cover_src": f"/media/blob/{digest}" if digest else "/media/placeholder"})
     return _template(
         request,
         "steam/library.html",
@@ -507,6 +559,26 @@ def _library_page(
             "collection_regex": collection_regex or "",
             "match_status": match_status or "",
             "unmatched_only": unmatched_only,
+            "q": q,
+            "sort": sort,
+            "sorts": (
+                ("title-asc", "标题 A→Z"), ("title-desc", "标题 Z→A"),
+                ("rating-desc", "Bangumi 评分 高→低"), ("rating-asc", "Bangumi 评分 低→高"),
+                ("release-date-desc", "发行时间 新→旧"), ("release-date-asc", "发行时间 旧→新"),
+                ("playtime-desc", "游玩时长 多→少"), ("playtime-asc", "游玩时长 少→多"),
+                ("last-played-desc", "最近游玩 新→旧"), ("last-played-asc", "最近游玩 旧→新"),
+                ("first-seen-desc", "首次发现 新→旧"), ("first-seen-asc", "首次发现 旧→新"),
+                ("last-seen-desc", "最近发现 新→旧"), ("last-seen-asc", "最近发现 旧→新"),
+                ("appid-asc", "AppID 小→大"), ("appid-desc", "AppID 大→小"),
+                ("match-status-asc", "匹配状态"),
+            ),
+            "page": page,
+            "page_size": page_size,
+            "page_count": page_count,
+            "page_sizes": (12, 24, 48, 96),
+            "total": total,
+            "query_pairs": query_pairs,
+            "query_string": urlencode(query_pairs),
             "page_title": "Steam 未匹配" if unmatched_only else "Steam 库",
         },
     )
@@ -518,25 +590,36 @@ def steam_library(
     collection: str | None = Query(None, max_length=200),
     collection_regex: str | None = Query(None, max_length=200),
     match_status: str | None = Query(None, max_length=32),
+    q: str = Query("", max_length=200),
+    sort: str = Query("title-asc"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(24),
     settings: Settings = Depends(get_settings),
     session: Session = Depends(get_session),
 ) -> HTMLResponse:
     return _library_page(
         request, session, settings,
         collection=collection, collection_regex=collection_regex,
-        match_status=match_status, unmatched_only=False,
+        match_status=match_status, unmatched_only=False, q=q.strip(), sort=sort,
+        page=page, page_size=page_size,
     )
 
 
 @router.get("/unmatched", response_class=HTMLResponse)
 def steam_unmatched(
     request: Request,
+    q: str = Query("", max_length=200),
+    match_status: str | None = Query(None, max_length=32),
+    sort: str = Query("title-asc"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(24),
     settings: Settings = Depends(get_settings),
     session: Session = Depends(get_session),
 ) -> HTMLResponse:
     return _library_page(
         request, session, settings,
-        collection=None, collection_regex=None, match_status=None, unmatched_only=True,
+        collection=None, collection_regex=None, match_status=match_status, unmatched_only=True,
+        q=q.strip(), sort=sort, page=page, page_size=page_size,
     )
 
 
@@ -563,6 +646,7 @@ def match_plan_job(
     include_deferred: bool = Form(False),
     candidate_image_policy: str = Form("metadata"),
     request_delay_ms: int = Form(250, ge=0),
+    failure_policy: str = Form("fail_fast"),
     allow_network: bool = Form(False),
 ) -> HTMLResponse:
     if selector_mode is not None:
@@ -579,6 +663,8 @@ def match_plan_job(
         raise HTTPException(status_code=400, detail="Batch matching requires explicit network permission.")
     if candidate_image_policy not in {"none", "metadata", "cache"}:
         raise HTTPException(status_code=400, detail="Unsupported candidate image policy.")
+    if failure_policy not in {"fail_fast", "continue"}:
+        raise HTTPException(status_code=400, detail="Unsupported failure policy.")
     return _job(
         request,
         kind="steam_match_plan",
@@ -592,6 +678,7 @@ def match_plan_job(
             "include_deferred": include_deferred,
             "candidate_image_policy": candidate_image_policy,
             "request_delay_ms": request_delay_ms, "allow_network": True,
+            "failure_policy": failure_policy,
         },
     )
 
@@ -705,13 +792,22 @@ def match_revise(
     request: Request,
     app_id: str = Form(..., min_length=1, max_length=20),
     subject_id: int | None = Form(None, ge=1),
+    decision: str | None = Form(None),
     manual_review: bool = Form(False),
     no_subject: bool = Form(False),
     defer: bool = Form(False),
     allow_network: bool = Form(False),
+    return_query: str = Form("", max_length=1000),
+    return_anchor: str = Form("", max_length=40),
 ) -> Response:
     if not app_id.isdigit():
         raise HTTPException(status_code=400, detail="Steam AppID must be numeric.")
+    if decision is not None:
+        if decision not in {"manual_review", "no_subject", "deferred"}:
+            raise HTTPException(status_code=400, detail="Unsupported revision decision.")
+        manual_review = decision == "manual_review"
+        no_subject = decision == "no_subject"
+        defer = decision == "deferred"
     if sum((subject_id is not None, manual_review, no_subject, defer)) != 1:
         raise HTTPException(status_code=400, detail="Choose exactly one revision decision.")
     if subject_id is not None:
@@ -723,6 +819,8 @@ def match_revise(
             parameters={
                 "plan_id": plan_id, "app_id": app_id,
                 "subject_id": subject_id, "allow_network": True,
+                "return_query": _safe_plan_return_query(return_query),
+                "return_anchor": return_anchor if return_anchor.isdigit() else "",
             },
         )
     decision = "manual_review" if manual_review else "no_subject" if no_subject else "deferred"
@@ -733,8 +831,41 @@ def match_revise(
                 session, None, plan_id=plan_id, app_id=app_id, decision=decision
             )
     except (PlanError, SteamMatchError, SteamLibraryError) as exc:
+        with factory() as session:
+            existing_successor = session.scalar(
+                select(ChangePlan)
+                .where(
+                    or_(
+                        ChangePlan.selector_json.like(
+                            f'%"revision_of_plan_id":"{plan_id}"%'
+                        ),
+                        ChangePlan.selector_json.like(
+                            f'%"supersedes_plan_id":"{plan_id}"%'
+                        ),
+                    )
+                )
+                .order_by(ChangePlan.created_at.desc())
+            )
+        if existing_successor is not None:
+            return RedirectResponse(
+                _successor_url(
+                    existing_successor.id,
+                    return_query=return_query,
+                    return_anchor=return_anchor,
+                    notice=f"match-{decision}",
+                ),
+                status_code=303,
+            )
         raise _bad_request(exc) from None
-    return RedirectResponse(f"/plans/{stored.plan.id}", status_code=303)
+    return RedirectResponse(
+        _successor_url(
+            stored.plan.id,
+            return_query=return_query,
+            return_anchor=return_anchor,
+            notice=f"match-{decision}",
+        ),
+        status_code=303,
+    )
 
 
 @router.post("/match/revise")
@@ -747,16 +878,21 @@ def match_revise_form(
     no_subject: bool = Form(False),
     defer: bool = Form(False),
     allow_network: bool = Form(False),
+    return_query: str = Form("", max_length=1000),
+    return_anchor: str = Form("", max_length=40),
 ) -> Response:
     return match_revise(
         plan_id,
         request,
         app_id,
         subject_id,
+        None,
         manual_review,
         no_subject,
         defer,
         allow_network,
+        return_query,
+        return_anchor,
     )
 
 

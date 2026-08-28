@@ -4,10 +4,11 @@
   <div class="page-heading"><div><p class="eyebrow">LOCAL MIRROR</p><h1>作品</h1></div><span>{{ total }} 项</span></div>
   <form class="filters works-filters" method="get" action="/works">
     <div class="works-filter-basics">
-      <label>标题<input name="q" value="{{ q }}" maxlength="200" placeholder="搜索标题"></label>
-      <label>类型<select name="kind"><option value="">全部</option>{% for value, label in kinds %}<option value="{{ value }}"{% if kind == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
-      <label>来源<select name="source"><option value="all"{% if source == 'all' %} selected{% endif %}>全部</option><option value="bangumi"{% if source == 'bangumi' %} selected{% endif %}>Bangumi</option><option value="steam"{% if source == 'steam' %} selected{% endif %}>Steam</option></select></label>
-      <label>每页<select name="page_size">{% for value in page_sizes %}<option value="{{ value }}"{% if page_size == value %} selected{% endif %}>{{ value }} 项</option>{% endfor %}</select></label>
+      <label class="works-filter-title">标题<input name="q" value="{{ q }}" maxlength="200" placeholder="搜索标题"></label>
+      <label class="works-filter-kind">类型<select name="kind"><option value="">全部</option>{% for value, label in kinds %}<option value="{{ value }}"{% if kind == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+      <label class="works-filter-source">来源<select name="source"><option value="all"{% if source == 'all' %} selected{% endif %}>全部</option><option value="bangumi"{% if source == 'bangumi' %} selected{% endif %}>Bangumi</option><option value="steam"{% if source == 'steam' %} selected{% endif %}>Steam</option></select></label>
+      <label class="works-filter-page-size">每页<select name="page_size">{% for value in page_sizes %}<option value="{{ value }}"{% if page_size == value %} selected{% endif %}>{{ value }} 项</option>{% endfor %}</select></label>
+      <label class="works-filter-sort">排序<select name="sort">{% for value, label in sorts %}<option value="{{ value }}"{% if sort == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
     </div>
     <details class="works-filter-advanced"{% if selected_statuses or included_tags or excluded_tags or tag_include_mode != 'all' %} open{% endif %}>
       <summary>高级筛选{% if selected_statuses or included_tags or excluded_tags %} <span class="filter-active">已启用</span>{% endif %}</summary>

@@ -26,6 +26,7 @@ from bangumi_local.services.read_models import (
     personal_tag_facets,
 )
 from bangumi_local.web.dependencies import get_session
+from bangumi_local.web.presentation import status_label
 from bangumi_local.services.game_profiles import (
     GameProfileError,
     GameProfilePatch,
@@ -44,6 +45,15 @@ KIND_LABELS = {
     "unknown": "Unknown",
 }
 PAGE_SIZES = (12, 24, 48, 96)
+SORTS = (
+    ("title-asc", "标题 A→Z"), ("title-desc", "标题 Z→A"),
+    ("rating-desc", "评分 高→低"), ("rating-asc", "评分 低→高"),
+    ("release-date-desc", "发行时间 新→旧"), ("release-date-asc", "发行时间 旧→新"),
+    ("collection-updated-desc", "Bangumi 收藏更新时间 新→旧"),
+    ("collection-updated-asc", "Bangumi 收藏更新时间 旧→新"),
+    ("local-updated-desc", "本地更新时间 新→旧"),
+    ("local-updated-asc", "本地更新时间 旧→新"),
+)
 
 
 def _local_cover(session: Session, work_id: int) -> str:
@@ -79,6 +89,7 @@ def works_list(
     tag_exclude: list[str] | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(24),
+    sort: str = Query("title-asc"),
     session: Session = Depends(get_session),
 ) -> Response:
     normalized_query = q.strip() if q else None
@@ -91,6 +102,8 @@ def works_list(
         raise HTTPException(422, "Tag include mode must be all or any.")
     if page_size not in PAGE_SIZES:
         raise HTTPException(422, "Unsupported page size.")
+    if sort not in dict(SORTS):
+        raise HTTPException(422, "Unsupported work sort.")
     valid_statuses = {int(value) for value in CollectionStatus}
     normalized_statuses = tuple(dict.fromkeys(collection_status or ()))
     if any(value not in valid_statuses for value in normalized_statuses):
@@ -113,11 +126,14 @@ def works_list(
             tag_match=tag_include_mode,
             exclude_tags=normalized_excluded,
             source=source,
+            sort=sort,
         )
     except ReadModelError as exc:
         raise HTTPException(422, str(exc)) from None
 
     query_pairs: list[tuple[str, str | int]] = [("page_size", page_size)]
+    if sort != "title-asc":
+        query_pairs.append(("sort", sort))
     if normalized_query:
         query_pairs.append(("q", normalized_query))
     if normalized_kind:
@@ -157,7 +173,7 @@ def works_list(
             "kinds": tuple((value, KIND_LABELS[value]) for value in KIND_LABELS),
             "source": source,
             "collection_statuses": tuple(
-                (int(value), value.label) for value in CollectionStatus
+                (int(value), status_label(int(value), normalized_kind)) for value in CollectionStatus
             ),
             "selected_statuses": normalized_statuses,
             "personal_tags": personal_tag_facets(session),
@@ -167,6 +183,8 @@ def works_list(
             "page": page,
             "page_size": page_size,
             "page_sizes": PAGE_SIZES,
+            "sort": sort,
+            "sorts": SORTS,
             "total": result.total,
             "page_count": page_count,
             "page_links": page_links,

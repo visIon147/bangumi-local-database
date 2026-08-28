@@ -91,6 +91,7 @@ class ChangePlan(Base):
     created_at: Mapped[str] = mapped_column(String(32), nullable=False)
     reviewed_at: Mapped[str | None] = mapped_column(String(32))
     applied_at: Mapped[str | None] = mapped_column(String(32))
+    archived_at: Mapped[str | None] = mapped_column(String(32), index=True)
 
 
 class ChangePlanItem(Base):
@@ -852,6 +853,28 @@ class UiJob(Base):
     started_at: Mapped[str | None] = mapped_column(String(32))
     heartbeat_at: Mapped[str | None] = mapped_column(String(32))
     finished_at: Mapped[str | None] = mapped_column(String(32))
+    archived_at: Mapped[str | None] = mapped_column(String(32), index=True)
+
+
+class UiJobPlanLink(Base):
+    __tablename__ = "ui_job_plan_links"
+    __table_args__ = (
+        UniqueConstraint("job_id", "plan_id", "relation", name="uq_ui_job_plan_link"),
+        CheckConstraint(
+            "relation IN ('created', 'source', 'reverse', 'restore', 'supersedes')",
+            name="ck_ui_job_plan_links_relation",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    job_id: Mapped[str] = mapped_column(
+        ForeignKey("ui_jobs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    plan_id: Mapped[str] = mapped_column(
+        ForeignKey("change_plans.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    relation: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
 
 
 class UiJobEvent(Base):

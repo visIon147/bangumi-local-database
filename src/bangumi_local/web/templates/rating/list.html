@@ -10,11 +10,11 @@
     <p>默认选择所有非 wish 收藏。联网 enrichment 会转交后台任务，页面请求本身不会访问网络。</p>
     <form data-json-post data-success-prefix="/rating/queues/" method="post" action="/rating/queues">
       <fieldset><legend>Subject 类型</legend>{% for value, label in [(1,'book'),(2,'anime'),(3,'music'),(4,'game'),(6,'real')] %}<label class="check"><input type="checkbox" name="subject_types" value="{{ value }}" data-type="number" data-array="true" checked>{{ label }}</label>{% endfor %}</fieldset>
-      <fieldset><legend>收藏状态</legend>{% for value, label in [(2,'done'),(3,'doing'),(4,'on-hold'),(5,'dropped')] %}<label class="check"><input type="checkbox" name="collection_statuses" value="{{ value }}" data-type="number" data-array="true" checked>{{ label }}</label>{% endfor %}</fieldset>
+      <fieldset><legend>收藏状态</legend>{% for value, label in [(2,'已完成（done）'),(3,'进行中（doing）'),(4,'搁置（on-hold）'),(5,'抛弃（dropped）')] %}<label class="check"><input type="checkbox" name="collection_statuses" value="{{ value }}" data-type="number" data-array="true" checked>{{ label }}</label>{% endfor %}</fieldset>
       <label>排序<select name="order">{% for order in orders %}<option value="{{ order }}">{{ order }}</option>{% endfor %}</select></label>
       <label>随机 seed（random 时必填）<input name="seed" type="number" data-type="number"></label>
       <label>最多条目<input name="max_items" type="number" min="1" max="10000" data-type="number"></label>
-      <label class="check"><input name="include_deferred" type="checkbox" data-type="boolean">包含 deferred</label>
+      <label class="check"><input name="include_deferred" type="checkbox" data-type="boolean">包含暂缓（deferred）</label>
       <label class="check"><input name="allow_network" type="checkbox" data-type="boolean">联网补全展示信息（上限 200）</label>
       <button type="submit">建立固定队列</button>
     </form>

@@ -5,7 +5,7 @@ import json
 from math import ceil
 from typing import Generic, TypeVar
 
-from sqlalchemy import and_, exists, func, or_, select
+from sqlalchemy import and_, case, exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from bangumi_local.db.models import (
@@ -24,6 +24,7 @@ from bangumi_local.db.models import (
     RatingQueueSession,
     RemoteOperation,
     SyncConflict,
+    SyncShadow,
     Tag,
     Work,
     WorkLink,
@@ -327,6 +328,7 @@ def dashboard(session: Session) -> DashboardView:
         NamedCount(name, int(count))
         for name, count in session.execute(
             select(ChangePlan.status, func.count(ChangePlan.id))
+            .where(ChangePlan.archived_at.is_(None))
             .group_by(ChangePlan.status)
             .order_by(ChangePlan.status)
         )
@@ -349,7 +351,10 @@ def dashboard(session: Session) -> DashboardView:
             session.scalar(
                 select(func.count())
                 .select_from(ChangePlan)
-                .where(ChangePlan.status.in_(("draft", "reviewed", "partial")))
+                .where(
+                    ChangePlan.status.in_(("draft", "reviewed", "partial")),
+                    ChangePlan.archived_at.is_(None),
+                )
             )
             or 0
         ),
@@ -449,6 +454,7 @@ def list_works(
     tag_match: str = "all",
     exclude_tags: tuple[str, ...] = (),
     source: str | None = None,
+    sort: str = "title-asc",
 ) -> Page[WorkSummary]:
     _validate_page(page, page_size)
     conditions = []
@@ -514,22 +520,40 @@ def list_works(
         raise ReadModelError("source must be all, bangumi, or steam")
 
     base = (
-        select(Work, BangumiSubject, BangumiCollectionState)
+        select(Work, BangumiSubject, BangumiCollectionState, SyncShadow)
         .outerjoin(BangumiSubject, BangumiSubject.work_id == Work.id)
         .outerjoin(
             BangumiCollectionState,
             BangumiCollectionState.subject_id == BangumiSubject.subject_id,
         )
+        .outerjoin(SyncShadow, SyncShadow.subject_id == BangumiSubject.subject_id)
     )
     if conditions:
         base = base.where(and_(*conditions))
     total = int(session.scalar(select(func.count()).select_from(base.subquery())) or 0)
+    sort_fields = {
+        "title": func.lower(Work.title),
+        "rating": BangumiCollectionState.rating,
+        "release-date": Work.release_date,
+        "collection-updated": SyncShadow.remote_updated_at,
+        "local-updated": Work.updated_at,
+    }
+    try:
+        sort_name, direction = sort.rsplit("-", 1)
+        sort_column = sort_fields[sort_name]
+    except (KeyError, ValueError):
+        raise ReadModelError("Unsupported work sort.") from None
+    if direction not in {"asc", "desc"}:
+        raise ReadModelError("Unsupported work sort direction.")
+    ordering = (
+        sort_column.asc() if direction == "asc" else sort_column.desc()
+    )
     rows = session.execute(
-        base.order_by(func.lower(Work.title), Work.id)
+        base.order_by(case((sort_column.is_(None), 1), else_=0), ordering, Work.id)
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
-    work_ids = tuple(work.id for work, _subject, _state in rows)
+    work_ids = tuple(work.id for work, _subject, _state, _shadow in rows)
     tags_by_work = _work_tags(session, work_ids)
     steam_by_work = _steam_ids(session, work_ids)
     items = tuple(
@@ -550,7 +574,7 @@ def list_works(
             tags=tags_by_work.get(work.id, ()),
             steam_app_ids=steam_by_work.get(work.id, ()),
         )
-        for work, subject, state in rows
+        for work, subject, state, _shadow in rows
     )
     return Page(items, page, page_size, total)
 

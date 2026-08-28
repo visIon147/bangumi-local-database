@@ -6,7 +6,7 @@ import hashlib
 import os
 from pathlib import Path
 import struct
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlsplit, urlunsplit
 from uuid import uuid4
 
 import httpx
@@ -61,7 +61,11 @@ def normalize_remote_image_url(url: str, provider: str) -> str:
     if parsed.scheme != "https" or not hostname or parsed.username or parsed.password:
         raise MediaError("media_url_rejected")
     if parsed.query:
-        raise MediaError("media_url_query_rejected")
+        query = parse_qsl(parsed.query, keep_blank_values=True)
+        if provider != "steam" or any(
+            key != "t" or not value.isdigit() for key, value in query
+        ):
+            raise MediaError("media_url_query_rejected")
     if provider not in {"bangumi", "steam"} or hostname not in _ALLOWED_HOSTS:
         raise MediaError("media_host_rejected")
     return urlunsplit(("https", parsed.netloc.lower(), parsed.path, "", ""))

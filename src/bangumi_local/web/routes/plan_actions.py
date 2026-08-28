@@ -15,7 +15,7 @@ from bangumi_local.services.jobs import (
     issue_plan_confirmation,
 )
 from bangumi_local.db.models import UiJob
-from bangumi_local.web.action_protocol import invalid_action, job_required
+from bangumi_local.web.action_protocol import invalid_action
 
 
 router = APIRouter(prefix="/plan-actions")
@@ -42,6 +42,37 @@ def actions_home(plan_id: str, request: Request) -> HTMLResponse:
         name="plans/actions.html",
         context={"page_title": f"计划操作 {plan_id}", "stored": stored},
     )
+
+
+@router.post("/{plan_id}/review-preflight")
+def review_and_preflight_action(
+    plan_id: str,
+    request: Request,
+    confirmation_plan_id: str = Form(...),
+) -> HTMLResponse:
+    """Record explicit review and enqueue fresh preflight in one UI action."""
+
+    rejected = _exact_plan_id(request, plan_id, confirmation_plan_id)
+    if rejected is not None:
+        return rejected
+    try:
+        with request.app.state.session_factory.begin() as session:
+            stored = load_plan(session, plan_id)
+            if stored.plan.status != "draft":
+                raise PlanError("Only draft plans can be reviewed.")
+            review_plan(session, plan_id)
+            job = enqueue_job(
+                session,
+                kind="plan_preflight",
+                capability="remote_read",
+                config={"plan_id": plan_id},
+            )
+            job_id = job.id
+    except PlanError as exc:
+        return invalid_action(request, str(exc), status_code=409)
+    except SQLAlchemyError:
+        return invalid_action(request, "本地数据库操作失败。", status_code=500)
+    return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
 
 @router.post("/{plan_id}/review")
@@ -211,12 +242,6 @@ def apply_action(
         return invalid_action(request, str(exc), status_code=404)
     if stored.plan.status not in {"reviewed", "partial"}:
         return invalid_action(request, "计划状态不允许 apply。", status_code=409)
-    if stored.plan.kind == "steam_match":
-        return job_required(
-            request,
-            action="steam-match-apply",
-            detail="Steam match 使用本地映射专用 preflight/worker；通用远端 apply worker 不会接管该计划。",
-        )
     if any(
         str(item.action.get("operation")) in {"manual_uncollect", "delete_collection"}
         for item in stored.planned
@@ -242,7 +267,10 @@ def apply_action(
                 kind="plan_apply",
                 capability=(
                     "local_write"
-                    if stored.plan.kind == "pull" and stored.plan.format_version == 5
+                    if (
+                        stored.plan.kind == "steam_match"
+                        or (stored.plan.kind == "pull" and stored.plan.format_version == 5)
+                    )
                     else "remote_write"
                 ),
                 config={"plan_id": plan_id},

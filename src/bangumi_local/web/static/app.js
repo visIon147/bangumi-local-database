@@ -121,23 +121,70 @@ document.addEventListener("submit", async function submitSecureForm(event) {
   const form = event.target.closest("form[data-secure-post]");
   if (!form) return;
   event.preventDefault();
+  const confirmation = form.dataset.confirm;
+  if (confirmation && !window.confirm(confirmation)) return;
   if (form.matches("[data-steam-rules-form]")) {
     const target = form.querySelector("[data-rules-json]");
     if (target) target.value = JSON.stringify(steamRulesPayload(form));
   }
-  const response = await window.bldFetch(form.action, {
-    method: (form.method || "post").toUpperCase(),
-    body: new FormData(form),
-    credentials: "same-origin"
-  });
-  if (response.redirected) {
-    window.location.assign(response.url);
-    return;
+  const submitter = event.submitter;
+  const action = submitter?.hasAttribute("formaction") ? submitter.formAction : form.action;
+  const method = submitter?.hasAttribute("formmethod")
+    ? submitter.formMethod
+    : (form.method || "post");
+  const body = typeof FormData === "function" && event.submitter
+    ? new FormData(form, event.submitter)
+    : new FormData(form);
+  const originalLabel = submitter?.textContent || "";
+  let feedback = form.querySelector("[data-form-feedback]");
+  if (!feedback) {
+    feedback = document.createElement("p");
+    feedback.dataset.formFeedback = "";
+    feedback.className = "form-feedback";
+    feedback.setAttribute("role", "status");
+    form.append(feedback);
   }
-  const html = await response.text();
-  document.open();
-  document.write(html);
-  document.close();
+  if (submitter) {
+    submitter.disabled = true;
+    submitter.textContent = form.dataset.busyLabel || "处理中…";
+  }
+  feedback.classList.remove("danger");
+  feedback.textContent = "请求已提交，请勿重复点击。";
+  try {
+    const response = await window.bldFetch(action, {
+      method: method.toUpperCase(),
+      headers: {"Accept": "text/html"},
+      body,
+      credentials: "same-origin"
+    });
+    if (response.redirected) {
+      window.location.assign(response.url);
+      return;
+    }
+    const html = await response.text();
+    if (!response.ok && form.hasAttribute("data-inline-feedback")) {
+      const page = new DOMParser().parseFromString(html, "text/html");
+      const detail = page.querySelector(".hero p:last-child")?.textContent?.trim();
+      const suggestion = page.querySelector(".safety-note")?.textContent?.trim();
+      feedback.classList.add("danger");
+      feedback.textContent = `操作未完成（HTTP ${response.status}）：${detail || "请刷新计划状态后重试。"}${suggestion ? ` ${suggestion}` : ""}`;
+      if (submitter) {
+        submitter.disabled = false;
+        submitter.textContent = originalLabel;
+      }
+      return;
+    }
+    document.open();
+    document.write(html);
+    document.close();
+  } catch (_error) {
+    feedback.classList.add("danger");
+    feedback.textContent = "本地 UI 请求未完成。请确认服务仍在运行，再刷新页面检查计划是否已经生成；不要连续重复提交。";
+    if (submitter) {
+      submitter.disabled = false;
+      submitter.textContent = originalLabel;
+    }
+  }
 });
 
 function jsonFormValue(element) {
@@ -226,4 +273,34 @@ for (const form of document.querySelectorAll('form[action="/discovery/sessions/b
     event.stopImmediatePropagation();
     window.alert("Bangumi Browse 必须至少填写年份或平台。");
   }, true);
+}
+
+for (const panel of document.querySelectorAll("[data-job-live]")) {
+  const terminal = new Set(["succeeded", "failed", "cancelled", "interrupted"]);
+  let currentStatus = panel.dataset.jobStatus || "";
+  if (terminal.has(currentStatus)) continue;
+  const poll = async () => {
+    try {
+      const response = await fetch(panel.dataset.statusUrl, {credentials: "same-origin"});
+      if (!response.ok) return;
+      const value = await response.json();
+      const progress = panel.querySelector("[data-job-progress]");
+      if (progress) {
+        progress.max = value.total || 1;
+        progress.value = value.current || 0;
+      }
+      const text = panel.querySelector("[data-job-progress-text]");
+      if (text) text.textContent = `${value.phase || "-"} · ${value.current || 0}${value.total == null ? "" : `/${value.total}`}`;
+      if (terminal.has(value.status)) {
+        currentStatus = value.status;
+        window.location.reload();
+        return;
+      }
+      currentStatus = value.status;
+    } catch (_error) {
+      // The next poll can recover from a short local server interruption.
+    }
+    window.setTimeout(poll, 1000);
+  };
+  window.setTimeout(poll, 1000);
 }

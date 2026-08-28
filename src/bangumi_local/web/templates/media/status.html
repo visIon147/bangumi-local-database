@@ -17,6 +17,9 @@
     <h2>Steam 本地图片</h2>
     <p>Steam 扫描可以选择 none、metadata 或 cache；只读取本地 librarycache。</p>
     <form data-json-post data-reload="true" method="post" action="/media/scan"><label>Steam AppIDs（逗号；空为全部）<input name="app_ids" data-type="csv-string"></label><label>策略<select name="policy"><option value="none">不处理</option><option value="metadata" selected>仅元数据</option><option value="cache">复制到项目缓存</option></select></label><button>扫描本地 Steam 图片</button></form>
+    <h3>Steam 远程封面补全</h3>
+    <p>通过公开 Steam Store 元数据和官方 CDN 补齐封面，不使用 Web API Key。默认只处理当前显示占位图的条目；已有本地 Steam 或 Bangumi 缓存封面时不会重复请求。</p>
+    <form data-json-post method="post" action="/media/steam-covers"><label>目标<select name="selector"><option value="all_missing" selected>全部当前占位图</option><option value="appids">指定 AppIDs</option></select></label><label>Steam AppIDs（逗号；选择指定 AppIDs 时必填）<input name="app_ids" data-type="csv-string"></label><label>任务上限<input name="max_items" type="number" value="250" min="1" max="250" data-type="number"></label><label class="check"><input name="force_refresh" type="checkbox" data-type="boolean">显式刷新指定 AppIDs 已有的 Steam 远程封面</label><input type="hidden" name="allow_network" value="true" data-type="boolean"><button>联网补齐 Steam 封面</button></form>
   </section>
   <section class="panel" id="remote-media">
     <h2>Bangumi / 远端图片</h2>

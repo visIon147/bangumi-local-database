@@ -368,6 +368,7 @@ def test_rating_queue_local_actions_hide_private_reason_and_sync_is_job(
         sync_job = _post(client, f"/rating/queues/{session_id}/sync-plan", {})
     assert page.status_code == next_item.status_code == rated.status_code == 200
     assert "Queue Game" in page.text
+    assert "Bangumi 收藏：玩过（done）" in page.text
     assert f"/media/blob/{digest}" in page.text
     assert private_reason not in rated.text and private_reason not in page.text
     assert rated.json() == {"subject_id": 101, "outcome": "rated", "remote_writes": 0}
@@ -422,6 +423,7 @@ def test_discovery_local_decision_and_explicit_promotion_jobs(tmp_path: Path) ->
             candidate.subject_id = 101
             session.commit()
         engine.dispose()
+        page_with_collection = client.get(f"/discovery/sessions/{session_id}")
         status = _post(
             client,
             f"/discovery/candidates/{candidate_id}/status-draft",
@@ -434,6 +436,8 @@ def test_discovery_local_decision_and_explicit_promotion_jobs(tmp_path: Path) ->
         )
     assert decided.status_code == 200 and private_reason not in decided.text
     assert f"/media/blob/{digest}" in page.text
+    assert "Bangumi 收藏：尚未收藏" in page.text
+    assert "Bangumi 收藏：玩过（done）" in page_with_collection.text
     assert decided.json()["decision"] == "played"
     assert preview.json()["status"] == "needs_steam_match"
     assert identity.status_code == status.status_code == search.status_code == 202

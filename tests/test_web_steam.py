@@ -357,3 +357,62 @@ def test_local_dispositions_and_offline_revision_use_short_transactions(
     assert entry is not None and entry.match_status == "no_subject"
     assert plan_count == 2
     assert reviews == 3
+
+
+def test_match_plan_workbench_uses_mutually_exclusive_decision_forms(tmp_path: Path) -> None:
+    client, _secret, plan_id = _client(tmp_path)
+    with client:
+        page = client.get(f"/plans/{plan_id}")
+        headers = _csrf(client)
+        response = client.post(
+            f"/steam/match/plan/{plan_id}/revise",
+            data={"app_id": "70", "decision": "no_subject"},
+            headers=headers,
+            follow_redirects=False,
+        )
+    assert page.status_code == 200
+    assert 'name="decision" value="no_subject"' in page.text
+    assert 'name="decision" value="manual_review"' in page.text
+    assert response.status_code == 303
+
+
+def test_match_revision_preserves_filters_and_duplicate_submit_is_idempotent(
+    tmp_path: Path,
+) -> None:
+    client, _secret, plan_id = _client(tmp_path)
+    return_query = "q=Half&disposition=&reason=&page_size=50&page=1"
+    with client:
+        page = client.get(f"/plans/{plan_id}?{return_query}")
+        headers = _csrf(client)
+        first = client.post(
+            f"/steam/match/plan/{plan_id}/revise",
+            data={
+                "app_id": "70",
+                "decision": "no_subject",
+                "return_query": return_query,
+                "return_anchor": "1",
+            },
+            headers=headers,
+            follow_redirects=False,
+        )
+        duplicate = client.post(
+            f"/steam/match/plan/{plan_id}/revise",
+            data={
+                "app_id": "70",
+                "decision": "no_subject",
+                "return_query": return_query,
+                "return_anchor": "1",
+            },
+            headers=headers,
+            follow_redirects=False,
+        )
+
+    assert page.status_code == 200
+    assert "筛选项说明" in page.text
+    assert "候选需要人工核对" in page.text or "确认无条目" in page.text
+    assert first.status_code == duplicate.status_code == 303
+    assert first.headers["location"] == duplicate.headers["location"]
+    assert "q=Half" in first.headers["location"]
+    assert "page_size=50" in first.headers["location"]
+    assert "notice=match-no_subject" in first.headers["location"]
+    assert first.headers["location"].endswith("#plan-item-1")

@@ -92,6 +92,13 @@ from bangumi_local.services.steam_titles import (
     prepare_title_completion,
     set_manual_title,
 )
+from bangumi_local.services.steam_covers import (
+    SteamCoverError,
+    fetch_steam_cover,
+    persist_steam_cover,
+    prepare_steam_cover_completion,
+    steam_cover_summary,
+)
 from bangumi_local.services.rating_queue import (
     RATING_ORDERS,
     RatingQueueError,
@@ -155,6 +162,7 @@ db_app = typer.Typer(help="Safely migrate and inspect the local database.", no_a
 steam_app = typer.Typer(help="Import, inspect, match, and plan from a Steam library.", no_args_is_help=True)
 steam_match_app = typer.Typer(help="Review Steam to Bangumi identity matches.", no_args_is_help=True)
 steam_titles_app = typer.Typer(help="Complete or override imported Steam titles.", no_args_is_help=True)
+steam_covers_app = typer.Typer(help="Complete Steam covers from public Store metadata.", no_args_is_help=True)
 rating_app = typer.Typer(help="Persistent local-first rating review workflow.", no_args_is_help=True)
 rating_queue_app = typer.Typer(help="Create and resume fixed rating queues.", no_args_is_help=True)
 discovery_app = typer.Typer(help="Bounded, persistent played-game discovery.", no_args_is_help=True)
@@ -170,6 +178,7 @@ app.add_typer(db_app, name="db")
 app.add_typer(steam_app, name="steam")
 steam_app.add_typer(steam_match_app, name="match")
 steam_app.add_typer(steam_titles_app, name="titles")
+steam_app.add_typer(steam_covers_app, name="covers")
 app.add_typer(rating_app, name="rating")
 rating_app.add_typer(rating_queue_app, name="queue")
 app.add_typer(discovery_app, name="discovery")
@@ -1654,6 +1663,8 @@ def steam_titles_complete(
     """Fill Steam titles from public Store metadata without changing matches."""
     if (app_ids is None) == (not all_missing):
         raise typer.BadParameter("Choose exactly one of --appids or --all-missing.")
+    if all_missing and force_refresh:
+        raise typer.BadParameter("--force-refresh requires explicit --appids.")
     if not allow_network:
         raise typer.BadParameter("Steam Store title completion requires --allow-network.")
     parsed = _parse_app_ids(app_ids) if app_ids is not None else None
@@ -1727,6 +1738,62 @@ def steam_titles_clear(app_id: str) -> None:
         raise typer.Exit(code=1) from None
     typer.echo(f"Steam AppID {app_id} manual-title priority cleared.")
     typer.echo("Network requests performed: 0")
+
+
+@steam_covers_app.command("complete")
+def steam_covers_complete(
+    app_ids: str | None = typer.Option(None, "--appids"),
+    all_missing: bool = typer.Option(False, "--all-missing"),
+    force_refresh: bool = typer.Option(False, "--force-refresh"),
+    max_items: int = typer.Option(250, "--max-items", min=1, max=250),
+    allow_network: bool = typer.Option(False, "--allow-network"),
+) -> None:
+    """Cache official Steam Store/CDN covers for entries that currently show placeholders."""
+
+    if (app_ids is None) == (not all_missing):
+        raise typer.BadParameter("Choose exactly one of --appids or --all-missing.")
+    if not allow_network:
+        raise typer.BadParameter("Steam cover completion requires --allow-network.")
+    parsed = _parse_app_ids(app_ids) if app_ids is not None else None
+    settings = _settings_or_exit()
+    try:
+        with session_scope(settings.database_url) as session:
+            prepared = prepare_steam_cover_completion(
+                session,
+                settings.media_cache_directory,
+                account_id=settings.steam_account_id,
+                app_ids=parsed,
+                all_missing=all_missing,
+                force_refresh=force_refresh,
+                max_items=max_items,
+            )
+        outcomes = []
+        for index, target in enumerate(prepared.targets):
+            outcome = fetch_steam_cover(
+                target,
+                settings.media_cache_directory,
+                max_bytes=settings.image_max_item_bytes,
+                timeout_seconds=settings.bangumi_request_timeout_seconds,
+                max_retries=settings.bangumi_max_retries,
+                retry_base_seconds=settings.bangumi_retry_base_seconds,
+            )
+            with session_scope(settings.database_url) as session:
+                persist_steam_cover(session, outcome)
+            outcomes.append(outcome)
+            if index + 1 < len(prepared.targets):
+                time.sleep(0.25)
+        summary = steam_cover_summary(prepared, tuple(outcomes))
+    except (SteamCoverError, SteamLibraryError, SteamDataError, MediaError, SQLAlchemyError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from None
+    typer.echo(
+        f"Steam covers: examined={summary.examined} requested={summary.requested} "
+        f"cached={summary.cached} already-available={summary.already_available} "
+        f"no-metadata={summary.no_metadata} failed={summary.failed}"
+    )
+    if summary.still_missing:
+        typer.echo("Still missing: " + ", ".join(summary.still_missing))
+    typer.echo("Bangumi requests performed: 0; public Steam Store/CDN reads only.")
 
 
 @steam_app.command("list")

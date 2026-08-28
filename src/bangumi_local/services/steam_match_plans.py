@@ -10,7 +10,7 @@ from typing import Callable, Literal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from bangumi_local.adapters.bangumi import BangumiClient
+from bangumi_local.adapters.bangumi import BangumiAPIError, BangumiClient
 from bangumi_local.db.models import (
     BangumiSubject,
     ChangePlan,
@@ -64,6 +64,7 @@ class PreparedSteamMatchPlan:
     entries: tuple[PreparedMatchSearch, ...]
     policy: AutoMatchPolicy
     candidate_limit: int
+    failure_policy: Literal["fail_fast", "continue"] = "fail_fast"
     include_no_subject: bool = False
     include_deferred: bool = False
 
@@ -73,6 +74,10 @@ class FetchedSteamMatchPlanEntry:
     prepared: PreparedMatchSearch
     fetched: FetchedMatchSearch | None
     title_unavailable: bool = False
+    failure_code: str | None = None
+    failure_message: str | None = None
+    failure_status: int | None = None
+    attempts: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -300,6 +305,7 @@ def prepare_steam_match_plan(
     candidate_limit: int = 10,
     batch_offset: int = 0,
     max_items: int = 250,
+    failure_policy: Literal["fail_fast", "continue"] = "fail_fast",
 ) -> PreparedSteamMatchPlan:
     if not 1 <= candidate_limit <= 50:
         raise PlanError("Candidate limit must be between 1 and 50.")
@@ -309,6 +315,8 @@ def prepare_steam_match_plan(
         raise PlanError("At most 250 explicit Steam AppIDs can be matched at once.")
     if candidate_image_policy not in {"none", "metadata", "cache"}:
         raise PlanError("Candidate image policy must be none, metadata, or cache.")
+    if failure_policy not in {"fail_fast", "continue"}:
+        raise PlanError("Failure policy must be fail_fast or continue.")
     entries, selector = _selected_entries(
         session,
         account_id=account_id,
@@ -344,6 +352,7 @@ def prepare_steam_match_plan(
             "include_no_subject": include_no_subject,
             "include_deferred": include_deferred,
             "candidate_image_policy": candidate_image_policy,
+            "failure_policy": failure_policy,
         }
     )
     prepared_entries = tuple(
@@ -360,6 +369,7 @@ def prepare_steam_match_plan(
         entries=prepared_entries,
         policy=policy,
         candidate_limit=candidate_limit,
+        failure_policy=failure_policy,
         include_no_subject=include_no_subject,
         include_deferred=include_deferred,
     )
@@ -372,37 +382,119 @@ def fetch_steam_match_plan(
     include_store_titles: bool = True,
     timeout_seconds: float = 20.0,
     request_delay_seconds: float = 0.25,
+    max_retries: int = 4,
+    retry_base_seconds: float = 0.5,
+    progress_fn: Callable[[int, int, str], None] | None = None,
     sleep_fn: Callable[[float], None] = time.sleep,
 ) -> FetchedSteamMatchPlan:
     if request_delay_seconds < 0:
         raise PlanError("Batch request delay must not be negative.")
+    if max_retries < 0 or retry_base_seconds <= 0:
+        raise PlanError("Retry settings are invalid.")
     results: list[FetchedSteamMatchPlanEntry] = []
+    total = len(prepared.entries)
+    consecutive_auth_failures = 0
+    network_entry_count = 0
     for index, entry in enumerate(prepared.entries):
-        if index and request_delay_seconds:
-            sleep_fn(request_delay_seconds)
+        if progress_fn is not None:
+            progress_fn(index, total, f"Searching Steam AppID {entry.app_id}.")
         if entry.match_status == "confirmed" or (
             entry.match_status == "no_subject" and not prepared.include_no_subject
         ) or (
             entry.match_status == "deferred" and not prepared.include_deferred
         ):
             results.append(FetchedSteamMatchPlanEntry(entry, None))
+            if progress_fn is not None:
+                progress_fn(index + 1, total, f"Skipped resolved Steam AppID {entry.app_id}.")
             continue
-        try:
-            fetched = fetch_match_search(
-                entry,
-                client,
-                include_store_titles=include_store_titles,
-                timeout_seconds=timeout_seconds,
-                limit=prepared.candidate_limit,
-            )
-        except SteamMatchError as exc:
-            if "No Steam title is available" not in str(exc):
-                raise
+        if consecutive_auth_failures >= 3:
             results.append(
-                FetchedSteamMatchPlanEntry(entry, None, title_unavailable=True)
+                FetchedSteamMatchPlanEntry(
+                    entry,
+                    None,
+                    failure_code="steam_match_auth_unavailable",
+                    failure_message="Authentication circuit breaker skipped this search.",
+                )
             )
-        else:
-            results.append(FetchedSteamMatchPlanEntry(entry, fetched))
+            if progress_fn is not None:
+                progress_fn(index + 1, total, f"Authentication unavailable for Steam AppID {entry.app_id}.")
+            continue
+        if network_entry_count and request_delay_seconds:
+            sleep_fn(request_delay_seconds)
+        network_entry_count += 1
+        attempts = 0
+        while True:
+            try:
+                fetched = fetch_match_search(
+                    entry,
+                    client,
+                    include_store_titles=include_store_titles,
+                    timeout_seconds=timeout_seconds,
+                    limit=prepared.candidate_limit,
+                )
+            except SteamMatchError as exc:
+                if "No Steam title is available" not in str(exc):
+                    raise
+                results.append(
+                    FetchedSteamMatchPlanEntry(entry, None, title_unavailable=True)
+                )
+                consecutive_auth_failures = 0
+                break
+            except BangumiAPIError as exc:
+                status = exc.status_code
+                is_auth = status in {401, 403}
+                if is_auth and prepared.failure_policy == "fail_fast":
+                    raise
+                retryable = (
+                    is_auth
+                    or exc.timed_out
+                    or status is None
+                    or status == 429
+                    or (status is not None and status >= 500)
+                )
+                if retryable and attempts < max_retries:
+                    delay = exc.retry_after_seconds
+                    if delay is None:
+                        delay = retry_base_seconds * (2**attempts)
+                    attempts += 1
+                    sleep_fn(delay)
+                    continue
+                if prepared.failure_policy == "fail_fast":
+                    raise
+                code = (
+                    "steam_match_auth_failed"
+                    if is_auth
+                    else "steam_match_timeout"
+                    if exc.timed_out
+                    else f"steam_match_http_{status}"
+                    if status is not None
+                    else "steam_match_transport_error"
+                )
+                message = (
+                    f"Bangumi search returned HTTP {status}."
+                    if status is not None
+                    else "Bangumi search failed before an HTTP response was received."
+                )
+                results.append(
+                    FetchedSteamMatchPlanEntry(
+                        entry,
+                        None,
+                        failure_code=code,
+                        failure_message=message,
+                        failure_status=status,
+                        attempts=attempts + 1,
+                    )
+                )
+                consecutive_auth_failures = (
+                    consecutive_auth_failures + 1 if is_auth else 0
+                )
+                break
+            else:
+                results.append(FetchedSteamMatchPlanEntry(entry, fetched))
+                consecutive_auth_failures = 0
+                break
+        if progress_fn is not None:
+            progress_fn(index + 1, total, f"Finished Steam AppID {entry.app_id}.")
     return FetchedSteamMatchPlan(prepared, tuple(results))
 
 
@@ -468,6 +560,35 @@ def persist_steam_match_plan(
                         "steam_collections": list(collections),
                         "match_status": prepared.match_status,
                         "match_candidates": [],
+                    },
+                    source_precondition_hash=source_hash,
+                )
+            )
+            continue
+        if fetched_entry.failure_code is not None:
+            source_hash, collections = steam_match_source_precondition(
+                session, prepared.entry_id
+            )
+            planned.append(
+                PlanCandidate(
+                    work_id=None,
+                    subject_id=None,
+                    source_entry_id=prepared.entry_id,
+                    title=title,
+                    bgm_url=None,
+                    disposition="unchanged",
+                    reason=fetched_entry.failure_code,
+                    action={"operation": "none"},
+                    selection_evidence={
+                        "steam_app_id": prepared.app_id,
+                        "steam_collections": list(collections),
+                        "match_status": prepared.match_status,
+                        "match_candidates": [],
+                        "review_mode": "search_failed",
+                        "failure_code": fetched_entry.failure_code,
+                        "failure_message": fetched_entry.failure_message,
+                        "http_status": fetched_entry.failure_status,
+                        "attempts": fetched_entry.attempts,
                     },
                     source_precondition_hash=source_hash,
                 )
@@ -625,7 +746,10 @@ def create_steam_match_plan(
     candidate_limit: int = 10,
     batch_offset: int = 0,
     max_items: int = 250,
+    failure_policy: Literal["fail_fast", "continue"] = "fail_fast",
     request_delay_seconds: float = 0.25,
+    max_retries: int = 4,
+    retry_base_seconds: float = 0.5,
     sleep_fn: Callable[[float], None] = time.sleep,
 ) -> StoredPlan:
     """Compatibility wrapper for CLI/tests; UI jobs use the explicit stages."""
@@ -644,6 +768,7 @@ def create_steam_match_plan(
         candidate_limit=candidate_limit,
         batch_offset=batch_offset,
         max_items=max_items,
+        failure_policy=failure_policy,
     )
     fetched = fetch_steam_match_plan(
         prepared,
@@ -651,6 +776,8 @@ def create_steam_match_plan(
         include_store_titles=include_store_titles,
         timeout_seconds=timeout_seconds,
         request_delay_seconds=request_delay_seconds,
+        max_retries=max_retries,
+        retry_base_seconds=retry_base_seconds,
         sleep_fn=sleep_fn,
     )
     return persist_steam_match_plan(session, fetched)

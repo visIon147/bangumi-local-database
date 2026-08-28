@@ -1,6 +1,6 @@
 [project]
 name = "bangumi-local-database"
-version = "1.0.0"
+version = "1.1.1"
 description = "Auditable local mirror and safe sync engine for Bangumi collections"
 readme = "README.md"
 license = "MIT"

@@ -40,6 +40,14 @@ class MediaFetchPayload(BaseModel):
     source_ids: list[str] = Field(default_factory=list, max_length=200)
     allow_network: bool = False
 
+
+class SteamCoverPayload(BaseModel):
+    selector: str = "all_missing"
+    app_ids: list[str] = Field(default_factory=list, max_length=250)
+    force_refresh: bool = False
+    max_items: int = Field(250, ge=1, le=250)
+    allow_network: bool = False
+
 _PLACEHOLDER = b"""<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"320\" height=\"420\" viewBox=\"0 0 320 420\"><rect width=\"320\" height=\"420\" fill=\"#202938\"/><path d=\"M90 265l55-70 42 48 28-33 34 55z\" fill=\"#64748b\"/><circle cx=\"112\" cy=\"130\" r=\"24\" fill=\"#94a3b8\"/><text x=\"160\" y=\"330\" text-anchor=\"middle\" fill=\"#cbd5e1\" font-family=\"sans-serif\" font-size=\"18\">No image</text></svg>"""
 
 
@@ -94,8 +102,8 @@ def local_media_url(
     binding_scopes = (
         (MediaBinding.rating_queue_item_id, rating_queue_item_id),
         (MediaBinding.discovery_candidate_id, discovery_candidate_id),
-        (MediaBinding.work_id, work_id),
         (MediaBinding.library_entry_id, library_entry_id),
+        (MediaBinding.work_id, work_id),
     )
     for column, value in binding_scopes:
         if value is None:
@@ -136,6 +144,7 @@ def local_media_url(
 
     variant_priority = {
         "library_portrait": 100,
+        "library_portrait_2x": 95,
         "library_capsule": 90,
         "common": 80,
         "large": 70,
@@ -269,6 +278,49 @@ def media_scan(payload: MediaScanPayload, request: Request) -> dict[str, object]
         "status": "queued",
         "operation": "steam_media_scan",
         "network_requests": 0,
+    }
+
+
+@router.post("/steam-covers", status_code=202)
+def steam_cover_job(payload: SteamCoverPayload, request: Request) -> dict[str, object]:
+    if not payload.allow_network:
+        raise HTTPException(status_code=409, detail="Explicit network permission is required")
+    if payload.selector not in {"all_missing", "appids"}:
+        raise HTTPException(status_code=422, detail="Unsupported Steam cover selector")
+    selected = tuple(dict.fromkeys(item.strip() for item in payload.app_ids if item.strip()))
+    if payload.selector == "appids" and not selected:
+        raise HTTPException(status_code=422, detail="Provide at least one Steam AppID")
+    if payload.selector == "all_missing" and selected:
+        raise HTTPException(
+            status_code=422,
+            detail="Clear AppIDs when selecting all currently missing covers",
+        )
+    if payload.selector == "all_missing" and payload.force_refresh:
+        raise HTTPException(
+            status_code=422,
+            detail="Force refresh requires an explicit AppID selection",
+        )
+    if any(not item.isdigit() for item in selected):
+        raise HTTPException(status_code=422, detail="Steam AppIDs must be numeric")
+    with request.app.state.session_factory.begin() as session:
+        job = enqueue_job(
+            session,
+            kind="steam_covers_complete",
+            capability="remote_read",
+            config={
+                "app_ids": list(selected),
+                "all_missing": payload.selector == "all_missing",
+                "force_refresh": payload.force_refresh,
+                "max_items": payload.max_items,
+                "request_delay_ms": 250,
+            },
+        )
+        job_id = job.id
+    return {
+        "job_id": job_id,
+        "status": "queued",
+        "operation": "steam_covers_complete",
+        "network_permitted": True,
     }
 
 

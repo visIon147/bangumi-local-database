@@ -20,6 +20,14 @@ class SteamDataError(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
+class SteamStoreMedia:
+    app_id: str
+    title: str | None
+    header_image: str | None
+    capsule_image: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class SteamCollectionRecord:
     external_id: str
     name: str
@@ -463,6 +471,55 @@ def fetch_store_titles(app_id: str, *, timeout_seconds: float = 20.0) -> dict[st
         except (httpx.HTTPError, ValueError, AttributeError):
             continue
     return titles
+
+
+def fetch_store_media(
+    app_id: str,
+    *,
+    timeout_seconds: float = 20.0,
+    client: httpx.Client | None = None,
+) -> SteamStoreMedia | None:
+    """Read public Store metadata needed for cover discovery; never uses account credentials."""
+
+    if not app_id.isdigit():
+        raise SteamDataError("Steam AppID must be numeric.")
+    owned_client = client is None
+    http_client = client or httpx.Client(timeout=timeout_seconds, follow_redirects=False)
+    try:
+        try:
+            response = http_client.get(
+                "https://store.steampowered.com/api/appdetails",
+                params={"appids": app_id, "l": "english"},
+            )
+        except httpx.TimeoutException as exc:
+            raise SteamDataError("steam_store_timeout") from exc
+        except httpx.HTTPError as exc:
+            raise SteamDataError("steam_store_transport_error") from exc
+        if response.status_code != 200:
+            raise SteamDataError(f"steam_store_http_{response.status_code}")
+        try:
+            payload = response.json()
+            item = payload.get(app_id)
+            if not isinstance(item, dict) or item.get("success") is not True:
+                return None
+            data = item.get("data")
+            if not isinstance(data, dict):
+                return None
+        except (ValueError, AttributeError) as exc:
+            raise SteamDataError("steam_store_response_invalid") from exc
+
+        def optional_text(value: object) -> str | None:
+            return str(value).strip() if isinstance(value, str) and value.strip() else None
+
+        return SteamStoreMedia(
+            app_id=app_id,
+            title=optional_text(data.get("name")),
+            header_image=optional_text(data.get("header_image")),
+            capsule_image=optional_text(data.get("capsule_image")),
+        )
+    finally:
+        if owned_client:
+            http_client.close()
 
 
 def read_steam_snapshot(settings: Settings, *, allow_network: bool = False) -> SteamSnapshot:

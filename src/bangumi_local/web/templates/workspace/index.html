@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-heading"><div><p class="eyebrow">WORKSPACE</p><h1>任务与计划工作台</h1></div><span>{{ total }} 项</span></section>
+<nav class="tabs"><a class="{% if view == 'jobs' %}active{% endif %}" href="/workspace?view=jobs">任务</a><a class="{% if view == 'plans' %}active{% endif %}" href="/workspace?view=plans">计划</a></nav>
+<form class="filters compact-filters" method="get">
+  <input type="hidden" name="view" value="{{ view }}">
+  <label>关键词<input name="q" value="{{ q }}" placeholder="ID / 类型 / 操作"></label>
+  <label>状态<select name="status"><option value="">全部</option>{% for value in statuses %}<option value="{{ value }}"{% if status == value %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+  <label>历史<select name="archived"><option value="active"{% if archived == 'active' %} selected{% endif %}>当前</option><option value="only"{% if archived == 'only' %} selected{% endif %}>已归档</option><option value="all"{% if archived == 'all' %} selected{% endif %}>全部</option></select></label>
+  <label>每页<select name="page_size">{% for value in page_sizes %}<option value="{{ value }}"{% if page_size == value %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></label><button>筛选</button>
+</form>
+<form class="panel table-wrap" method="post" action="/workspace/{{ view }}/{{ 'restore' if archived == 'only' else 'archive' }}" data-secure-post>
+  <table><thead><tr><th><span class="visually-hidden">选择</span></th><th>{{ '任务' if view == 'jobs' else '计划' }}</th><th>状态</th><th>进度 / 下一步</th><th>创建时间</th></tr></thead><tbody>
+  {% for item in items %}{% set row = item.row %}
+  <tr>
+    <td><input type="checkbox" name="ids" value="{{ row.id }}" aria-label="选择 {{ row.id }}"></td>
+    <td><a class="mono" href="/{{ 'jobs' if view == 'jobs' else 'plans' }}/{{ row.id }}">{{ row.id }}</a><br><small>{{ row.kind }}{% if view == 'plans' %} · {{ row.operation }}{% endif %}</small></td>
+    <td><span class="status status-{{ row.status }}">{{ row.status|status_label }}</span>{% if row.archived_at %}<br><small>已归档</small>{% endif %}</td>
+    <td>{% if view == 'jobs' %}<progress max="{{ row.progress_total or 1 }}" value="{{ row.progress_current }}"></progress> {{ row.progress_current }}{% if row.progress_total is not none %}/{{ row.progress_total }}{% endif %}{% endif %}{% if item.next_action %}<br><a href="{{ item.next_action[1] }}">{{ item.next_action[0] }}</a>{% endif %}</td>
+    <td>{{ row.created_at }}</td>
+  </tr>
+  {% else %}<tr><td colspan="5">没有符合条件的记录。</td></tr>{% endfor %}
+  </tbody></table>
+  {% if items %}<div class="button-row"><button>{{ '恢复选中项' if archived == 'only' else '归档选中项' }}</button>{% if archived == 'only' %}<button class="danger" formaction="/workspace/{{ view }}/purge-preview">永久删除预览</button>{% endif %}</div>{% endif %}
+</form>
+<nav class="pagination"><span>第 {{ page }} / {{ page_count }} 页</span>{% if page > 1 %}<a href="/workspace?view={{ view }}&status={{ status }}&q={{ q|urlencode }}&archived={{ archived }}&page_size={{ page_size }}&page={{ page-1 }}">上一页</a>{% endif %}{% if page < page_count %}<a href="/workspace?view={{ view }}&status={{ status }}&q={{ q|urlencode }}&archived={{ archived }}&page_size={{ page_size }}&page={{ page+1 }}">下一页</a>{% endif %}</nav>
+{% endblock %}

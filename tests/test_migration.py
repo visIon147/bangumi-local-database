@@ -57,12 +57,13 @@ def test_alembic_migration_creates_phase5_schema(tmp_path: Path) -> None:
             "media_renditions",
             "media_bindings",
             "ui_jobs",
-            "ui_job_events",
-            "plan_confirmation_nonces",
+                "ui_job_events",
+                "ui_job_plan_links",
+                "plan_confirmation_nonces",
         }
     assert expected <= set(inspector.get_table_names())
     with engine.connect() as connection:
-        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0012_ui_jobs"
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0013_workspace_history"
         review_columns = {
             column["name"] for column in inspector.get_columns("library_match_reviews")
         }
@@ -138,7 +139,7 @@ def test_phase4_migration_preserves_phase1_rows(tmp_path: Path) -> None:
         ).scalar_one().startswith('{"comment":"kept"')
         assert connection.execute(text("SELECT kind FROM works WHERE id=1")).scalar_one() == "game"
         assert connection.execute(text("SELECT work_id FROM bangumi_subjects WHERE subject_id=101")).scalar_one() == 1
-        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0012_ui_jobs"
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0013_workspace_history"
         assert connection.execute(text("PRAGMA foreign_key_check")).fetchall() == []
     assert "sync_conflicts" in inspect(engine).get_table_names()
     assert "change_plans" in inspect(engine).get_table_names()
@@ -155,7 +156,7 @@ def test_safe_upgrade_creates_backup_manifest_and_verifies_head(tmp_path: Path) 
     result = upgrade_database_safely(database_url, tmp_path / "backups")
 
     assert result.from_revision == "0003_phase3"
-    assert result.to_revision == "0012_ui_jobs"
+    assert result.to_revision == "0013_workspace_history"
     assert result.backup_path.is_file()
     manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
     assert manifest["status"] == "verified"
@@ -170,7 +171,7 @@ def test_safe_upgrade_supports_a_new_empty_sqlite_file(tmp_path: Path) -> None:
     result = upgrade_database_safely(database_url, tmp_path / "backups")
 
     assert result.from_revision is None
-    assert result.to_revision == "0012_ui_jobs"
+    assert result.to_revision == "0013_workspace_history"
     assert result.foreign_key_violations == ()
     assert result.backup_path.is_file()
     engine = create_engine(database_url)
@@ -189,7 +190,48 @@ def test_safe_upgrade_uses_packaged_migrations_outside_source_tree(
 
     result = upgrade_database_safely(database_url, work_directory / "backups")
 
-    assert result.to_revision == "0012_ui_jobs"
+    assert result.to_revision == "0013_workspace_history"
+
+
+def test_workspace_migration_backfills_job_plan_links(tmp_path: Path) -> None:
+    database_path = tmp_path / "workspace-backfill.sqlite3"
+    database_url = f"sqlite:///{database_path.as_posix()}"
+    config = Config("alembic.ini")
+    config.attributes["database_url"] = database_url
+    command.upgrade(config, "0012_ui_jobs")
+    engine = create_engine(database_url)
+    now = "2026-08-28T00:00:00Z"
+    plan_id = "11111111-1111-1111-1111-111111111111"
+    job_id = "22222222-2222-2222-2222-222222222222"
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO change_plans "
+                "(id, format_version, kind, operation, selector_json, summary_json, content_hash, "
+                "status, created_by, created_at) VALUES "
+                "(:id, 4, 'steam_match', 'match', '{}', '{}', :hash, 'draft', 'manual', :now)"
+            ),
+            {"id": plan_id, "hash": "0" * 64, "now": now},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO ui_jobs "
+                "(id, kind, capability, status, config_json, result_json, progress_current, "
+                "progress_total, phase, created_at, finished_at) VALUES "
+                "(:id, 'steam_match_plan', 'remote_read', 'succeeded', '{}', :result, 1, 1, "
+                "'completed', :now, :now)"
+            ),
+            {"id": job_id, "result": json.dumps({"plan_id": plan_id}), "now": now},
+        )
+    engine.dispose()
+    command.upgrade(config, "head")
+    engine = create_engine(database_url)
+    with engine.connect() as connection:
+        row = connection.execute(
+            text("SELECT job_id, plan_id, relation FROM ui_job_plan_links")
+        ).one()
+        assert row == (job_id, plan_id, "created")
+    engine.dispose()
     assert database_path.is_file()
 
 

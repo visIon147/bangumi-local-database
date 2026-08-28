@@ -29,11 +29,13 @@ class BangumiAPIError(RuntimeError):
         status_code: int | None = None,
         retry_after_seconds: float | None = None,
         timed_out: bool = False,
+        error_kind: str | None = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.retry_after_seconds = retry_after_seconds
         self.timed_out = timed_out
+        self.error_kind = error_kind
 
 
 class _APIModel(BaseModel):
@@ -201,10 +203,16 @@ class BangumiClient:
             response = self._client.request(method, path, params=params, json=json_body)
         except httpx.TimeoutException as exc:
             raise BangumiAPIError(
-                f"Bangumi API request timed out: {method} {path}", timed_out=True
+                f"Bangumi API request timed out: {method} {path}",
+                timed_out=True,
+                error_kind=type(exc).__name__,
             ) from exc
         except httpx.HTTPError as exc:
-            raise BangumiAPIError(f"Bangumi API request failed for {method} {path}") from exc
+            error_kind = type(exc).__name__
+            raise BangumiAPIError(
+                f"Bangumi API transport failed ({error_kind}): {method} {path}",
+                error_kind=error_kind,
+            ) from exc
         if not response.is_success:
             raise BangumiAPIError(
                 f"Bangumi API request failed: {method} {path} returned HTTP {response.status_code}",

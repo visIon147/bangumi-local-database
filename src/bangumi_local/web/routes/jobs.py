@@ -3,11 +3,11 @@ from __future__ import annotations
 import json
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from bangumi_local.db.models import UiJob, UiJobEvent
+from bangumi_local.db.models import ChangePlan, UiJob, UiJobEvent, UiJobPlanLink
 from bangumi_local.services.jobs import enqueue_job, request_job_cancel
 from bangumi_local.web.dependencies import get_session, get_write_session
 
@@ -43,6 +43,7 @@ _JOB_KIND_LABELS = {
     "steam_match_plan": "Steam 匹配计划",
     "steam_match_search": "Steam 单项候选搜索",
     "steam_media_scan": "扫描 Steam 本地图片",
+    "steam_covers_complete": "补全 Steam 远程封面",
     "steam_status_plan": "Steam 状态计划",
     "steam_titles_complete": "补齐 Steam 标题",
     "sync_plan": "通用同步计划",
@@ -77,6 +78,11 @@ _RESULT_LABELS = {
     "title": "标题",
     "reconciled": "已对齐",
     "verified_absent_count": "确认已取消收藏",
+    "examined": "已检查",
+    "requested": "发起补全",
+    "already_available": "已有有效封面",
+    "no_metadata": "无可用元数据",
+    "still_missing": "仍缺封面的 Steam AppID",
 }
 _PLAN_RESULT_KEYS = {
     "plan_id": "打开计划工作台",
@@ -96,6 +102,11 @@ def _present_job_result(
     links: list[tuple[str, str]] = []
     tables: list[dict[str, object]] = []
     for key, value in result.items():
+        if key == "plan_id" and isinstance(result.get("plan_url"), str):
+            continue
+        if key == "plan_url" and isinstance(value, str) and value.startswith("/plans/"):
+            links.append(("打开计划并恢复审核位置", value))
+            continue
         if key in _PLAN_RESULT_KEYS and isinstance(value, str) and value:
             links.append((_PLAN_RESULT_KEYS[key], f"/plans/{value}"))
             continue
@@ -113,6 +124,15 @@ def _present_job_result(
                 }
             )
             continue
+        if isinstance(value, list):
+            tables.append(
+                {
+                    "title": _RESULT_LABELS.get(key, key.replace("_", " ").title()),
+                    "columns": ("value",),
+                    "rows": [{"value": item} for item in value],
+                }
+            )
+            continue
         if not isinstance(value, (dict, list)):
             facts.append((_RESULT_LABELS.get(key, key.replace("_", " ").title()), value))
     return facts, links, tables
@@ -125,7 +145,12 @@ def jobs_list(
     session: Session = Depends(get_session),
 ) -> HTMLResponse:
     normalized = status if status in _JOB_STATUSES else None
-    statement = select(UiJob).order_by(UiJob.created_at.desc()).limit(100)
+    statement = (
+        select(UiJob)
+        .where(UiJob.archived_at.is_(None))
+        .order_by(UiJob.created_at.desc())
+        .limit(100)
+    )
     if normalized:
         statement = statement.where(UiJob.status == normalized)
     jobs = session.scalars(statement).all()
@@ -158,6 +183,12 @@ def job_detail(
     ).all()
     result = json.loads(job.result_json) if job.result_json else None
     result_facts, result_links, result_tables = _present_job_result(job.kind, result)
+    linked_plans = session.execute(
+        select(UiJobPlanLink, ChangePlan)
+        .join(ChangePlan, ChangePlan.id == UiJobPlanLink.plan_id)
+        .where(UiJobPlanLink.job_id == job_id)
+        .order_by(UiJobPlanLink.id)
+    ).all()
     return request.app.state.templates.TemplateResponse(
         request=request,
         name="jobs/detail.html",
@@ -169,8 +200,35 @@ def job_detail(
             "result_facts": result_facts,
             "result_links": result_links,
             "result_tables": result_tables,
+            "linked_plans": linked_plans,
             "page_title": f"任务 {job.id}",
         },
+    )
+
+
+@router.get("/{job_id}/status", response_class=JSONResponse)
+def job_status(job_id: str, session: Session = Depends(get_session)) -> JSONResponse:
+    job = session.get(UiJob, job_id)
+    if job is None:
+        raise HTTPException(404, "Job not found")
+    links = [
+        {"plan_id": plan_id, "relation": relation, "url": f"/plans/{plan_id}"}
+        for plan_id, relation in session.execute(
+            select(UiJobPlanLink.plan_id, UiJobPlanLink.relation)
+            .where(UiJobPlanLink.job_id == job_id)
+            .order_by(UiJobPlanLink.id)
+        )
+    ]
+    return JSONResponse(
+        {
+            "id": job.id,
+            "status": job.status,
+            "phase": job.phase,
+            "current": job.progress_current,
+            "total": job.progress_total,
+            "error": job.error_message,
+            "links": links,
+        }
     )
 
 

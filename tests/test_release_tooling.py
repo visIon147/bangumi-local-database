@@ -21,7 +21,7 @@ _verify_content = _RELEASE._verify_content
 
 def test_release_version_and_project_versions_are_consistent() -> None:
     assert _validate_version("1.0.0") == "1.0.0"
-    assert _project_versions(Path.cwd()) == ("1.0.0", "1.0.0")
+    assert _project_versions(Path.cwd()) == ("1.1.1", "1.1.1")
     with pytest.raises(ReleaseError):
         _validate_version("v1.0.0")
 

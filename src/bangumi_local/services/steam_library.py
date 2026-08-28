@@ -6,10 +6,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from bangumi_local.db.models import (
+    BangumiCollectionState,
+    BangumiSubject,
     LibraryCollection,
     LibraryEntry,
     LibraryEntryCollection,
     SourceAccount,
+    Work,
 )
 
 
@@ -36,6 +39,11 @@ class SteamEntryListItem:
     playtime_minutes: int | None
     match_status: str
     work_id: int | None
+    bangumi_rating: int | None
+    release_date: str | None
+    last_played_at: str | None
+    first_seen_at: str
+    last_seen_at: str
 
 
 def steam_account(session: Session, account_id: str | None = None) -> SourceAccount:
@@ -51,7 +59,7 @@ def steam_account(session: Session, account_id: str | None = None) -> SourceAcco
 
 
 def list_steam_collections(
-    session: Session, account_id: str | None = None
+    session: Session, account_id: str | None = None, *, sort: str = "name-asc"
 ) -> list[SteamCollectionListItem]:
     account = steam_account(session, account_id)
     count_memberships = (
@@ -72,7 +80,7 @@ def list_steam_collections(
         .where(LibraryCollection.source_account_id == account.id)
         .order_by(LibraryCollection.active.desc(), LibraryCollection.name)
     ).all()
-    return [
+    result = [
         SteamCollectionListItem(
             external_id=collection.external_id,
             name=collection.name,
@@ -82,6 +90,11 @@ def list_steam_collections(
         )
         for collection, count in rows
     ]
+    if sort not in {"name-asc", "name-desc", "count-asc", "count-desc"}:
+        raise SteamLibraryError("Unsupported Steam collection sort.")
+    key_name, direction = sort.rsplit("-", 1)
+    key = (lambda item: item.name.casefold()) if key_name == "name" else (lambda item: item.active_entries)
+    return sorted(result, key=lambda item: (key(item), item.external_id), reverse=direction == "desc")
 
 
 def list_steam_entries(
@@ -91,6 +104,8 @@ def list_steam_entries(
     collection_name: str | None = None,
     collection_regex: str | None = None,
     match_status: str | None = None,
+    query: str | None = None,
+    sort: str = "title-asc",
 ) -> list[SteamEntryListItem]:
     import re
 
@@ -113,6 +128,17 @@ def list_steam_entries(
     for entry_id, name in memberships:
         names_by_entry.setdefault(entry_id, []).append(name)
     pattern = re.compile(collection_regex) if collection_regex is not None else None
+    normalized_query = (query or "").strip().casefold()
+    work_ids = tuple(entry.work_id for entry in entries if entry.work_id is not None)
+    work_data = {
+        work.id: (work.release_date, state.rating if state else None)
+        for work, _subject, state in session.execute(
+            select(Work, BangumiSubject, BangumiCollectionState)
+            .outerjoin(BangumiSubject, BangumiSubject.work_id == Work.id)
+            .outerjoin(BangumiCollectionState, BangumiCollectionState.subject_id == BangumiSubject.subject_id)
+            .where(Work.id.in_(work_ids))
+        )
+    } if work_ids else {}
     result: list[SteamEntryListItem] = []
     for entry in entries:
         names = tuple(sorted(names_by_entry.get(entry.id, ())))
@@ -122,6 +148,9 @@ def list_steam_entries(
             continue
         if match_status is not None and entry.match_status != match_status:
             continue
+        if normalized_query and normalized_query not in f"{entry.external_id} {entry.title_observed or ''}".casefold():
+            continue
+        release_date, rating = work_data.get(entry.work_id, (None, None))
         result.append(
             SteamEntryListItem(
                 app_id=entry.external_id,
@@ -132,6 +161,33 @@ def list_steam_entries(
                 playtime_minutes=entry.playtime_minutes,
                 match_status=entry.match_status,
                 work_id=entry.work_id,
+                bangumi_rating=rating,
+                release_date=release_date,
+                last_played_at=entry.last_played_at,
+                first_seen_at=entry.first_seen_at,
+                last_seen_at=entry.last_seen_at,
             )
         )
-    return result
+    sort_fields = {
+        "title": lambda item: (item.title or "").casefold() or None,
+        "rating": lambda item: item.bangumi_rating,
+        "release-date": lambda item: item.release_date,
+        "playtime": lambda item: item.playtime_minutes,
+        "last-played": lambda item: item.last_played_at,
+        "first-seen": lambda item: item.first_seen_at,
+        "last-seen": lambda item: item.last_seen_at,
+        "appid": lambda item: int(item.app_id),
+        "match-status": lambda item: item.match_status,
+    }
+    try:
+        sort_name, direction = sort.rsplit("-", 1)
+        key = sort_fields[sort_name]
+    except (KeyError, ValueError):
+        raise SteamLibraryError("Unsupported Steam entry sort.") from None
+    if direction not in {"asc", "desc"}:
+        raise SteamLibraryError("Unsupported Steam entry sort direction.")
+    non_null = [item for item in result if key(item) is not None]
+    nulls = [item for item in result if key(item) is None]
+    non_null.sort(key=lambda item: (key(item), int(item.app_id)), reverse=direction == "desc")
+    nulls.sort(key=lambda item: int(item.app_id))
+    return [*non_null, *nulls]

@@ -249,6 +249,19 @@ def test_work_filters_use_exact_bangumi_personal_tags(tmp_path: Path) -> None:
     assert include_all.items[0].tags == ("Action", "RPG")
 
 
+def test_work_sort_supports_rating_and_nulls_last(tmp_path: Path) -> None:
+    database_url = _database(tmp_path)
+    _seed(database_url)
+    unrated = make_remote_collection(103, rate=0)
+    with session_scope(database_url) as session:
+        pull_collections(session, [unrated])
+    with session_scope(database_url) as session:
+        descending = list_works(session, sort="rating-desc")
+        ascending = list_works(session, sort="rating-asc")
+    assert [item.subject_id for item in descending.items] == [101, 102, 103]
+    assert [item.subject_id for item in ascending.items] == [102, 101, 103]
+
+
 def test_work_detail_is_detached_and_hides_machine_and_private_note_values(
     tmp_path: Path,
 ) -> None:

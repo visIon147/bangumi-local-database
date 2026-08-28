@@ -307,6 +307,34 @@ def test_plan_review_requires_exact_id_and_apply_requires_bound_single_use_nonce
     engine.dispose()
 
 
+def test_review_and_preflight_combines_ui_steps_without_typed_ids(tmp_path: Path) -> None:
+    client, database_url, _work_id, plan_id = _build_client(tmp_path)
+    with client:
+        headers = _csrf(client)
+        detail = client.get(f"/plans/{plan_id}")
+        action_page = client.get(f"/plan-actions/{plan_id}")
+        response = client.post(
+            f"/plan-actions/{plan_id}/review-preflight",
+            data={"confirmation_plan_id": plan_id},
+            headers=headers,
+            follow_redirects=False,
+        )
+    assert detail.status_code == action_page.status_code == 200
+    assert "审阅并开始 Preflight" in detail.text
+    assert 'data-confirm="确认已核对计划内容' in detail.text
+    assert "不再提供手工输入 Job ID" in action_page.text
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/jobs/")
+
+    engine = create_engine(database_url)
+    with Session(engine) as session:
+        plan = session.get(ChangePlan, plan_id)
+        job = session.scalar(select(UiJob).where(UiJob.kind == "plan_preflight"))
+        assert plan is not None and plan.status == "reviewed"
+        assert job is not None and job.status == "queued"
+    engine.dispose()
+
+
 def test_network_plan_forms_validate_then_return_job_required_without_writes(
     tmp_path: Path,
 ) -> None:

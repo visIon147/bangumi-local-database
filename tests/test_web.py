@@ -213,6 +213,62 @@ def test_host_origin_and_csrf_are_enforced(tmp_path: Path) -> None:
         ).status_code == 405
 
 
+def test_html_errors_are_rendered_without_changing_json_api_errors(tmp_path: Path) -> None:
+    client, secret, _work_id, _plan_id = _client(tmp_path)
+    with client:
+        client.get("/")
+        csrf = client.cookies.get("bld_csrf")
+        headers = {
+            "origin": "http://localhost",
+            "x-csrf-token": csrf,
+            "accept": "text/html",
+        }
+        html_error = client.post("/", headers=headers)
+        json_error = client.post(
+            "/",
+            headers={
+                "origin": "http://localhost",
+                "x-csrf-token": csrf,
+                "accept": "application/json",
+            },
+        )
+        script = client.get("/static/app.js")
+    assert html_error.status_code == 405
+    assert "HTTP 405" in html_error.text
+    assert "请求方法与页面操作不匹配" in html_error.text
+    assert secret not in html_error.text
+    assert json_error.status_code == 405 and json_error.json()["detail"] == "Method Not Allowed"
+    assert 'hasAttribute("formaction")' in script.text
+    assert "terminal.has(currentStatus)" in script.text
+    assert "submitter.disabled = true" in script.text
+    assert "请求已提交，请勿重复点击" in script.text
+    assert 'hasAttribute("data-inline-feedback")' in script.text
+
+
+def test_steam_cover_ui_enqueues_remote_read_job(tmp_path: Path) -> None:
+    client, _secret, _work_id, _plan_id = _client(tmp_path)
+    with client:
+        client.get("/")
+        csrf = client.cookies.get("bld_csrf")
+        response = client.post(
+            "/media/steam-covers",
+            json={
+                "selector": "all_missing",
+                "app_ids": [],
+                "force_refresh": False,
+                "max_items": 250,
+                "allow_network": True,
+            },
+            headers={
+                "origin": "http://localhost",
+                "x-csrf-token": csrf,
+                "accept": "application/json",
+            },
+        )
+    assert response.status_code == 202
+    assert response.json()["operation"] == "steam_covers_complete"
+
+
 def test_all_get_routes_leave_database_counts_unchanged(tmp_path: Path) -> None:
     client, _secret, work_id, plan_id = _client(tmp_path)
     database_path = tmp_path / "web.sqlite3"

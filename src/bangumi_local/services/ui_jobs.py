@@ -80,11 +80,21 @@ from bangumi_local.services.steam_match_plans import (
     revise_steam_match_plan,
 )
 from bangumi_local.services.steam_match_media import register_match_candidate_media
+from bangumi_local.services.steam_match_apply import (
+    apply_steam_match_plan,
+    preflight_steam_match_plan,
+)
 from bangumi_local.services.steam_plans import create_steam_status_plan
 from bangumi_local.services.steam_titles import (
     fetch_title_completion,
     persist_title_completion,
     prepare_title_completion,
+)
+from bangumi_local.services.steam_covers import (
+    fetch_steam_cover,
+    persist_steam_cover,
+    prepare_steam_cover_completion,
+    steam_cover_summary,
 )
 from bangumi_local.adapters.steam import read_steam_snapshot
 from bangumi_local.domain.steam import (
@@ -305,6 +315,7 @@ def build_ui_job_runner(settings: Settings) -> JobRunner:
         with session_scope(settings.database_url) as session:
             inspected = load_plan(session, plan_id)
             is_pull = inspected.plan.kind == "pull" and inspected.plan.format_version == 5
+            is_steam_match = inspected.plan.kind == "steam_match"
             selector = json.loads(inspected.plan.selector_json)
         with BangumiClient(settings) as client:
             if is_pull:
@@ -315,6 +326,8 @@ def build_ui_job_runner(settings: Settings) -> JobRunner:
                 subject_type = SubjectType(int(raw_type)) if raw_type is not None else None
                 collections = client.get_collections(subject_type=subject_type)
                 fresh = preflight_pull_plan(settings.database_url, plan_id, collections)
+            elif is_steam_match:
+                fresh = preflight_steam_match_plan(settings.database_url, client, plan_id)
             else:
                 fresh = preflight_plan(settings.database_url, client, plan_id)
             context.update(
@@ -330,6 +343,14 @@ def build_ui_job_runner(settings: Settings) -> JobRunner:
             if is_pull:
                 result = apply_pull_plan(
                     settings.database_url,
+                    plan_id,
+                    fresh,
+                    backup_directory=settings.backup_directory,
+                )
+            elif is_steam_match:
+                result = apply_steam_match_plan(
+                    settings.database_url,
+                    client,
                     plan_id,
                     fresh,
                     backup_directory=settings.backup_directory,
@@ -404,6 +425,7 @@ def build_ui_job_runner(settings: Settings) -> JobRunner:
         with session_scope(settings.database_url) as session:
             inspected = load_plan(session, plan_id)
             is_pull = inspected.plan.kind == "pull" and inspected.plan.format_version == 5
+            is_steam_match = inspected.plan.kind == "steam_match"
             selector = json.loads(inspected.plan.selector_json)
         with BangumiClient(settings) as client:
             if is_pull:
@@ -414,17 +436,24 @@ def build_ui_job_runner(settings: Settings) -> JobRunner:
                 subject_type = SubjectType(int(raw_type)) if raw_type is not None else None
                 collections = client.get_collections(subject_type=subject_type)
                 result = preflight_pull_plan(settings.database_url, plan_id, collections)
+            elif is_steam_match:
+                result = preflight_steam_match_plan(settings.database_url, client, plan_id)
             else:
                 result = preflight_plan(settings.database_url, client, plan_id)
         return {
             "plan_id": plan_id,
             "will_modify": [
-                {"subject_id": item.subject_id, "title": item.title}
+                {
+                    "subject_id": item.subject_id,
+                    "steam_app_id": item.selection_evidence.get("steam_app_id"),
+                    "title": item.title,
+                }
                 for item in result.will_modify
             ],
             "unchanged": [
                 {
                     "subject_id": item.subject_id,
+                    "steam_app_id": item.selection_evidence.get("steam_app_id"),
                     "title": item.title,
                     "reason": item.reason,
                 }
@@ -563,6 +592,61 @@ def build_ui_job_runner(settings: Settings) -> JobRunner:
             "skipped": summary.skipped,
             "network_requests": 0,
         }
+
+    def steam_covers_complete_handler(
+        context: JobContext, config: Mapping[str, object]
+    ):
+        raw_ids = config.get("app_ids", [])
+        app_ids = tuple(str(item) for item in raw_ids if str(item)) or None
+        with session_scope(settings.database_url) as session:
+            prepared = prepare_steam_cover_completion(
+                session,
+                settings.media_cache_directory,
+                account_id=settings.steam_account_id,
+                app_ids=app_ids,
+                all_missing=bool(config.get("all_missing", False)),
+                force_refresh=bool(config.get("force_refresh", False)),
+                max_items=int(config.get("max_items", 250)),
+            )
+        context.update(
+            phase="steam_cover_prepare",
+            current=0,
+            total=len(prepared.targets),
+            message=(
+                f"Frozen {len(prepared.targets)} Steam entries that require remote covers."
+            ),
+        )
+        outcomes = []
+        delay = int(config.get("request_delay_ms", 250)) / 1000
+        for index, target in enumerate(prepared.targets, 1):
+            context.update(
+                phase="steam_cover_fetch",
+                current=index - 1,
+                total=len(prepared.targets),
+                message=f"Fetching Steam cover {index} of {len(prepared.targets)}.",
+            )
+            outcome = fetch_steam_cover(
+                target,
+                settings.media_cache_directory,
+                max_bytes=settings.image_max_item_bytes,
+                timeout_seconds=settings.bangumi_request_timeout_seconds,
+                max_retries=settings.bangumi_max_retries,
+                retry_base_seconds=settings.bangumi_retry_base_seconds,
+                sleep_fn=time.sleep,
+            )
+            with session_scope(settings.database_url) as session:
+                persist_steam_cover(session, outcome)
+            outcomes.append(outcome)
+            if index < len(prepared.targets) and delay:
+                time.sleep(delay)
+        summary = steam_cover_summary(prepared, tuple(outcomes))
+        context.update(
+            phase="steam_cover_complete",
+            current=len(prepared.targets),
+            total=len(prepared.targets),
+            message="Steam remote cover completion finished.",
+        )
+        return asdict(summary)
 
     def media_verify_handler(context: JobContext, config: Mapping[str, object]):
         context.update(
@@ -1277,6 +1361,7 @@ def build_ui_job_runner(settings: Settings) -> JobRunner:
                 candidate_limit=int(config.get("limit", 10)),
                 batch_offset=int(config.get("offset", 0)),
                 max_items=int(config.get("max_items", 250)),
+                failure_policy=str(config.get("failure_policy", "fail_fast")),
             )
         context.update(
             phase="remote_read",
@@ -1291,6 +1376,14 @@ def build_ui_job_runner(settings: Settings) -> JobRunner:
                 include_store_titles=True,
                 timeout_seconds=settings.bangumi_request_timeout_seconds,
                 request_delay_seconds=int(config.get("request_delay_ms", 250)) / 1000,
+                max_retries=settings.bangumi_max_retries,
+                retry_base_seconds=settings.bangumi_retry_base_seconds,
+                progress_fn=lambda current, total, message: context.update(
+                    phase="remote_read",
+                    current=current,
+                    total=total,
+                    message=message,
+                ),
                 sleep_fn=time.sleep,
             )
         with session_scope(settings.database_url) as session:
@@ -1387,7 +1480,17 @@ def build_ui_job_runner(settings: Settings) -> JobRunner:
             from bangumi_local.services.plans import load_plan
 
             export_plan(load_plan(session, plan_id), settings.plan_directory)
-        return {"plan_id": plan_id, "supersedes": str(config.get("plan_id", ""))}
+        return_query = str(config.get("return_query", ""))
+        separator = "&" if return_query else ""
+        plan_url = f"/plans/{plan_id}?{return_query}{separator}notice=match-subject"
+        return_anchor = str(config.get("return_anchor", ""))
+        if return_anchor.isdigit():
+            plan_url += f"#plan-item-{return_anchor}"
+        return {
+            "plan_id": plan_id,
+            "plan_url": plan_url,
+            "supersedes": str(config.get("plan_id", "")),
+        }
 
     def steam_status_plan_handler(context: JobContext, config: Mapping[str, object]):
         collections = _verified_collections(settings, SubjectType.GAME)
@@ -1448,6 +1551,7 @@ def build_ui_job_runner(settings: Settings) -> JobRunner:
     runner.register("plan_apply", apply_handler)
     runner.register("remote_media_fetch", remote_media_handler)
     runner.register("steam_media_scan", steam_media_scan_handler)
+    runner.register("steam_covers_complete", steam_covers_complete_handler)
     runner.register("media_verify", media_verify_handler)
     runner.register("media_prune", media_prune_handler)
     runner.register("rating_queue_create_enriched", rating_create_handler)

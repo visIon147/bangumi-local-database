@@ -55,6 +55,9 @@ from bangumi_local.services.steam_match_apply import (
 from bangumi_local.services.steam_match_plans import (
     AutoMatchPolicy,
     create_steam_match_plan,
+    fetch_steam_match_plan,
+    persist_steam_match_plan,
+    prepare_steam_match_plan,
     revise_steam_match_plan,
 )
 from bangumi_local.services.steam_match_media import register_match_candidate_media
@@ -234,6 +237,135 @@ class _MatchClient:
     def get_subject(self, subject_id: int) -> SubjectSearchCandidate:
         assert subject_id == self.candidate.subject_id
         return self.candidate
+
+
+class _NumberedMatchClient:
+    def search_subjects(self, query: str, **_kwargs: object) -> list[SubjectSearchCandidate]:
+        number = int(query.casefold().removeprefix("game "))
+        return [
+            SubjectSearchCandidate(
+                subject_id=100_000 + number,
+                subject_type=SubjectType.GAME,
+                title_original=f"Game {number}",
+                title_cn=None,
+                summary=None,
+                release_date=None,
+                cover_url=None,
+            )
+        ]
+
+
+def test_batch_match_keeps_229_entries_in_one_immutable_plan(tmp_path: Path) -> None:
+    database_url = _database(tmp_path)
+    now = "2026-08-28T00:00:00Z"
+    with session_scope(database_url) as session:
+        account = SourceAccount(
+            source="steam", external_account_id="123", config_json="{}",
+            first_seen_at=now, last_seen_at=now,
+        )
+        session.add(account)
+        session.flush()
+        for number in range(1, 230):
+            session.add(
+                LibraryEntry(
+                    source_account_id=account.id, external_id=str(number),
+                    title_observed=f"Game {number}", localized_titles_json="{}",
+                    ownership_scope="visible", metadata_json="{}",
+                    source_hash=f"hash-{number}", match_status="unmatched",
+                    first_seen_at=now, last_seen_at=now,
+                )
+            )
+        session.flush()
+        prepared = prepare_steam_match_plan(
+            session, account_id="123", all_unmatched=True, max_items=250,
+            candidate_limit=1,
+        )
+        assert len(prepared.entries) == 229
+    fetched = fetch_steam_match_plan(
+        prepared, _NumberedMatchClient(),  # type: ignore[arg-type]
+        include_store_titles=False, timeout_seconds=1,
+        request_delay_seconds=0, sleep_fn=lambda _seconds: None,
+    )
+    with session_scope(database_url) as session:
+        stored = persist_steam_match_plan(session, fetched)
+        assert len(stored.candidates) == 229
+        assert len(json.loads(stored.plan.selector_json)["evaluated_app_ids"]) == 229
+
+
+def test_batch_match_continue_records_auth_circuit_and_progress(tmp_path: Path) -> None:
+    database_url = _database(tmp_path)
+    now = "2026-08-28T00:00:00Z"
+    with session_scope(database_url) as session:
+        account = SourceAccount(
+            source="steam", external_account_id="123", config_json="{}",
+            first_seen_at=now, last_seen_at=now,
+        )
+        session.add(account)
+        session.flush()
+        for number in range(1, 6):
+            session.add(
+                LibraryEntry(
+                    source_account_id=account.id, external_id=str(number),
+                    title_observed=f"Game {number}", localized_titles_json="{}",
+                    ownership_scope="visible", metadata_json="{}",
+                    source_hash=f"hash-{number}", match_status="unmatched",
+                    first_seen_at=now, last_seen_at=now,
+                )
+            )
+        session.flush()
+        prepared = prepare_steam_match_plan(
+            session, account_id="123", all_unmatched=True,
+            failure_policy="continue", candidate_limit=1,
+        )
+
+    class AuthClient:
+        calls = 0
+
+        def search_subjects(self, *_args: object, **_kwargs: object):
+            self.calls += 1
+            raise BangumiAPIError("unauthorized", status_code=401)
+
+    client = AuthClient()
+    progress: list[tuple[int, int]] = []
+    fetched = fetch_steam_match_plan(
+        prepared, client,  # type: ignore[arg-type]
+        include_store_titles=False, timeout_seconds=1, request_delay_seconds=0,
+        max_retries=0, progress_fn=lambda current, total, _message: progress.append((current, total)),
+        sleep_fn=lambda _seconds: None,
+    )
+    assert client.calls == 3
+    assert [item.failure_code for item in fetched.entries] == [
+        "steam_match_auth_failed", "steam_match_auth_failed", "steam_match_auth_failed",
+        "steam_match_auth_unavailable", "steam_match_auth_unavailable",
+    ]
+    assert progress[-1] == (5, 5)
+
+
+def test_batch_match_fail_fast_auth_does_not_retry(tmp_path: Path) -> None:
+    snapshot = read_steam_snapshot(_settings(_steam_root(tmp_path)))
+    database_url = _database(tmp_path)
+    with session_scope(database_url) as session:
+        apply_steam_import(session, snapshot)
+        prepared = prepare_steam_match_plan(
+            session, account_id="123", app_ids=("100",), failure_policy="fail_fast"
+        )
+
+    class AuthClient:
+        calls = 0
+
+        def search_subjects(self, *_args: object, **_kwargs: object):
+            self.calls += 1
+            raise BangumiAPIError("unauthorized", status_code=403)
+
+    client = AuthClient()
+    with pytest.raises(BangumiAPIError):
+        fetch_steam_match_plan(
+            prepared, client,  # type: ignore[arg-type]
+            include_store_titles=False, timeout_seconds=1,
+            request_delay_seconds=0, max_retries=4,
+            sleep_fn=lambda _seconds: None,
+        )
+    assert client.calls == 1
 
 
 def test_match_candidates_never_auto_confirm_and_manual_decisions_are_audited(

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from bangumi_local.domain.models import SubjectType
 
 from bangumi_local.services.rating_queue import (
     RATING_ORDERS,
@@ -26,6 +27,7 @@ from bangumi_local.services.rating_queue import (
 from bangumi_local.services.jobs import enqueue_job
 from bangumi_local.web.dependencies import get_session
 from bangumi_local.web.routes.media import local_media_url
+from bangumi_local.web.presentation import status_label
 
 
 router = APIRouter(prefix="/rating")
@@ -144,20 +146,33 @@ def rating_show(
         counts = rating_queue_counts(session, session_id)
     except RatingQueueError as exc:
         raise _error(exc, 404) from None
-    items = [
-        {
-            "row": item,
-            "snapshot": json.loads(item.subject_snapshot_json),
-            "initial": json.loads(item.initial_snapshot_json),
-            "cover_src": local_media_url(
-                session,
-                request.app.state.settings.media_cache_directory,
-                rating_queue_item_id=item.id,
-                subject_id=item.subject_id,
-            ),
-        }
-        for item in view.items
-    ]
+    items = []
+    for item in view.items:
+        snapshot = json.loads(item.subject_snapshot_json)
+        initial = json.loads(item.initial_snapshot_json)
+        collection_type = initial.get("type")
+        try:
+            kind = SubjectType.parse(snapshot.get("subject_type")).kind
+        except (TypeError, ValueError):
+            kind = None
+        items.append(
+            {
+                "row": item,
+                "snapshot": snapshot,
+                "initial": initial,
+                "collection_status_label": (
+                    status_label(collection_type, kind)
+                    if isinstance(collection_type, int)
+                    else "尚未收藏"
+                ),
+                "cover_src": local_media_url(
+                    session,
+                    request.app.state.settings.media_cache_directory,
+                    rating_queue_item_id=item.id,
+                    subject_id=item.subject_id,
+                ),
+            }
+        )
     if items:
         if position is None:
             pending = next(
@@ -181,6 +196,9 @@ def rating_show(
             "previous_position": selected_index if selected_index > 0 else None,
             "next_position": selected_index + 2 if selected_index + 1 < len(items) else None,
             "counts": counts,
+            "queue_status_label": status_label(view.session.status),
+            "item_status_label": status_label(selected["row"].item_status) if selected else "",
+            "item_outcome_label": status_label(selected["row"].outcome) if selected and selected["row"].outcome else "",
             "page_title": f"评分队列 {session_id}",
         },
     )

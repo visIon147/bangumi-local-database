@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-heading"><div><p class="eyebrow">IRREVERSIBLE</p><h1>确认永久删除</h1></div></section>
+<aside class="safety-note danger">永久删除不可撤销。系统会先创建 SQLite 备份；审计相关记录不会允许删除。</aside>
+<section class="panel"><h2>影响清单</h2><p>可删除 {{ preview.purgeable|length }} 项；受保护 {{ preview.blocked|length }} 项。</p>{% if preview.blocked %}<ul>{% for item in preview.blocked %}<li><span class="mono">{{ item[0] }}</span>：{{ item[1] }}</li>{% endfor %}</ul>{% endif %}
+{% if preview.purgeable %}<form method="post" action="/workspace/{{ kind }}/purge" data-secure-post>{% for id in preview.purgeable %}<input type="hidden" name="ids" value="{{ id }}">{% endfor %}<label>输入 <code>{{ confirmation }}</code><input name="confirmation" autocomplete="off" required></label><button class="danger">创建备份并永久删除</button></form>{% endif %}</section>
+{% endblock %}

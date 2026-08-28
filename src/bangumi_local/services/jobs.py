@@ -19,6 +19,7 @@ from bangumi_local.db.models import (
     PlanConfirmationNonce,
     UiJob,
     UiJobEvent,
+    UiJobPlanLink,
 )
 from bangumi_local.db.repositories import utc_now_iso
 from bangumi_local.db.session import session_scope
@@ -144,15 +145,74 @@ def _event(session: Session, job: UiJob, level: str, message: str) -> None:
 
 
 def interrupt_running_jobs(session: Session) -> int:
-    rows = session.scalars(select(UiJob).where(UiJob.status == "running")).all()
+    rows = session.scalars(
+        select(UiJob).where(UiJob.status.in_(("running", "cancel_requested")))
+    ).all()
     now = utc_now_iso()
     for job in rows:
-        job.status = "interrupted"
+        was_cancel_requested = job.status == "cancel_requested"
+        job.status = "cancelled" if was_cancel_requested else "interrupted"
         job.finished_at = now
-        job.error_code = "server_restart"
-        job.error_message = "Interrupted by local UI restart; review before retrying."
-        _event(session, job, "warning", job.error_message)
+        job.error_code = "cancelled_on_restart" if was_cancel_requested else "server_restart"
+        job.error_message = (
+            "Cancellation completed when the local UI restarted."
+            if was_cancel_requested
+            else "Interrupted by local UI restart; review before retrying."
+        )
+        _event(session, job, "info" if was_cancel_requested else "warning", job.error_message)
     return len(rows)
+
+
+_PLAN_CREATING_JOBS = {
+    "bangumi_pull_plan",
+    "bulk_tag_plan",
+    "classify_games_plan",
+    "discovery_status_draft",
+    "rating_sync_plan",
+    "steam_match_plan",
+    "steam_status_plan",
+    "sync_plan",
+}
+
+
+def _record_plan_links(
+    session: Session, job: UiJob, result: Mapping[str, object]
+) -> None:
+    links: list[tuple[str, str]] = []
+    plan_id = result.get("plan_id")
+    if isinstance(plan_id, str):
+        links.append(
+            (plan_id, "created" if job.kind in _PLAN_CREATING_JOBS else "source")
+        )
+    for key, relation in (
+        ("source_plan_id", "source"),
+        ("reverse_plan_id", "reverse"),
+        ("restore_plan_id", "restore"),
+        ("supersedes", "supersedes"),
+    ):
+        value = result.get(key)
+        if isinstance(value, str):
+            links.append((value, relation))
+    now = utc_now_iso()
+    for linked_plan_id, relation in dict.fromkeys(links):
+        if session.get(ChangePlan, linked_plan_id) is None:
+            continue
+        exists_link = session.scalar(
+            select(UiJobPlanLink.id).where(
+                UiJobPlanLink.job_id == job.id,
+                UiJobPlanLink.plan_id == linked_plan_id,
+                UiJobPlanLink.relation == relation,
+            )
+        )
+        if exists_link is None:
+            session.add(
+                UiJobPlanLink(
+                    job_id=job.id,
+                    plan_id=linked_plan_id,
+                    relation=relation,
+                    created_at=now,
+                )
+            )
 
 
 def request_job_cancel(session: Session, job_id: str) -> UiJob:
@@ -262,7 +322,14 @@ class JobRunner:
         with session_scope(self.database_url) as session:
             job = session.get(UiJob, job_id)
             assert job is not None
+            if job.status == "cancel_requested":
+                job.status = "cancelled"
+                job.phase = "cancelled"
+                job.finished_at = utc_now_iso()
+                _event(session, job, "info", "Job cancelled after the current request finished.")
+                return job_id
             job.status = "succeeded"
+            _record_plan_links(session, job, result)
             job.result_json = json.dumps(
                 sanitize_job_payload(result), ensure_ascii=False, sort_keys=True, separators=(",", ":")
             )

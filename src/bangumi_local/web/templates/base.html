@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ request.state.csrf_token }}">
     <title>{{ page_title }} · Bangumi Local Database</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}?v=phase82">
-    <link rel="stylesheet" href="{{ url_for('static', path='/actions.css') }}?v=phase82">
-    <script src="{{ url_for('static', path='/app.js') }}?v=phase82" defer></script>
+    <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}?v={{ app_version }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='/actions.css') }}?v={{ app_version }}">
+    <script src="{{ url_for('static', path='/app.js') }}?v={{ app_version }}" defer></script>
   </head>
   <body>
     <header class="topbar">
@@ -19,8 +19,7 @@
         <a href="/steam">Steam</a>
         <a href="/rating">评分</a>
         <a href="/discovery">探索</a>
-        <a href="/jobs">任务</a>
-        <a href="/plans">计划</a>
+        <a href="/workspace">工作台</a>
         <a href="/settings">设置</a>
         <a href="/help">帮助</a>
         <a href="/health">健康状态</a>

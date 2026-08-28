@@ -162,13 +162,20 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   display: grid;
   gap: 1rem;
 }
-.works-filter-basics,
+.works-filter-basics {
+  display: grid;
+  grid-template-columns: minmax(12rem, 2fr) minmax(6.5rem, .7fr) minmax(7.5rem, .85fr) minmax(5.5rem, .6fr) minmax(13rem, 1.6fr);
+  align-items: start;
+  gap: 1rem;
+}
 .works-filter-advanced-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   align-items: start;
   gap: 1rem;
 }
+.works-filter-basics select,
+.works-filter-basics input { width: 100%; min-width: 0; max-width: 100%; }
 .works-filter-advanced {
   padding: .85rem 1rem 1rem;
   border: 1px solid var(--line);
@@ -291,6 +298,14 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .result-actions .button-link { margin: 0; }
 .result-facts { margin-bottom: 1rem; }
 .job-result-table + .job-result-table { margin-top: 1.25rem; }
+.result-scroll, .scroll-result {
+  max-height: 24rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.result-scroll thead { position: sticky; top: 0; z-index: 1; background: var(--panel); }
 .raw-result { margin-top: 1rem; padding-top: .75rem; border-top: 1px solid var(--line); }
 .raw-result summary { cursor: pointer; color: var(--muted); }
 .raw-result pre { overflow: auto; max-height: 28rem; }
@@ -361,6 +376,25 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .danger-zone { border-color: #7b3945; }
 .compact-filters { align-items: end; }
 .compact-filters > *, .compact-filters select, .compact-filters input { min-width: 0; max-width: 100%; }
+.filter-help { margin: -.5rem 0 1rem; color: var(--muted); }
+.filter-help summary { cursor: pointer; }
+.plan-primary-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: .6rem; }
+.plan-primary-actions form { margin: 0; }
+.plan-primary-actions .button-link { margin: 0; }
+.success-note {
+  margin: 1rem 0;
+  padding: .8rem 1rem;
+  border: 1px solid #3cae91;
+  border-radius: 10px;
+  background: #123a34;
+}
+.form-feedback { grid-column: 1 / -1; margin: .15rem 0 0; color: var(--accent); }
+.form-feedback.danger { color: #ffb4b4; }
+.confirmation-primary { border-color: var(--accent); }
+.confirmation-primary form { max-width: 34rem; }
+.preflight-result summary { cursor: pointer; font-weight: 700; }
+.preflight-result .scroll-result { margin-top: .8rem; padding: .5rem 1rem; }
+.primary-workflow { border-color: var(--accent); }
 .plan-workbench { display: grid; gap: 1rem; }
 .plan-card { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 1rem; }
 .plan-cover { width: 110px; height: 150px; object-fit: cover; border-radius: .6rem; background: var(--panel); }
@@ -377,17 +411,24 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .match-candidate p { margin: .25rem 0; }
 .candidate-summary { max-height: 6rem; overflow: auto; color: var(--muted); }
 .match-review-actions { display: grid; grid-template-columns: 2fr 1fr; gap: .75rem; margin-top: .8rem; }
+.match-review-actions > .muted { grid-column: 1 / -1; }
 .match-review-actions form { display: grid; gap: .5rem; }
 .match-review-actions > form, .match-review-actions label { min-width: 0; }
 .match-review-actions select, .match-review-actions button { width: 100%; min-width: 0; max-width: 100%; }
+@media (max-width: 1000px) {
+  .works-filter-basics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .works-filter-title, .works-filter-sort { grid-column: span 2; }
+}
 @media (max-width: 700px) {
   .topbar nav { justify-content: flex-start; }
   .card-grid { grid-template-columns: 1fr; }
   .works-filter-basics, .works-filter-advanced-grid { grid-template-columns: 1fr; }
+  .works-filter-title, .works-filter-sort { grid-column: auto; }
   .pagination-row, .page-jump { align-items: stretch; flex-direction: column; }
   .settings-grid { grid-template-columns: 1fr; }
   .queue-card { grid-template-columns: 1fr; }
   .plan-card { grid-template-columns: 1fr; }
   .plan-cover { width: 72px; height: 98px; }
   .match-review-actions { grid-template-columns: 1fr; }
+  .plan-primary-actions { justify-content: flex-start; }
 }

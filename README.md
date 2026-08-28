@@ -10,7 +10,7 @@ Bangumi Local Database 是一个面向个人长期使用的本地收藏管理工
 - **Steam 数据输入与匹配**：读取本地 Steam 分类和库存，补全标题，搜索多语言 Bangumi 候选，并将确认结果转换为收藏状态计划。
 - **队列式评分**：用固定、可恢复的卡片队列逐项评分、跳过或暂缓，再统一生成 Bangumi 同步计划。
 - **队列式探索**：从 Steam 证据或有界 Bangumi 搜索建立候选队列，永久记录玩过、未玩过、不确定和暂缓决定。
-- **可视化计划工作台**：预览批量操作与同步差异，人工调整条目后再执行；底层保留三方比较、备份、验证和审计。
+- **任务与计划工作台**：实时查看批量任务进度，直接进入关联计划，预览同步差异并逐项人工调整；底层保留三方比较、备份、验证和审计。
 
 ## 快速开始
 
@@ -135,10 +135,13 @@ bld steam detect
 bld steam import
 bld steam import --apply-local
 bld steam titles complete --all-missing --allow-network
+bld steam covers complete --all-missing --allow-network
 bld steam unmatched
 ```
 
 导入预览不会写数据库；`--apply-local` 也不会访问 Bangumi。未知标题可联网补全或人工覆盖，后续导入会保留人工标题。
+
+“Steam → 本地图片”可扫描客户端已有的 `librarycache`，也可显式联网读取公开 Steam Store 元数据并从官方 CDN 补齐当前仍显示占位图的条目。远程补图优先纵向 `library_600x900`，横向 header/capsule 仅作回退；已有本地 Steam 或已缓存 Bangumi 封面默认不会重复请求。该 Store 接口并非 Steam Web API 的稳定公开契约，失败项会单独列出，不会被解释为游戏已移除。
 
 匹配支持单条搜索和批量计划：
 
@@ -149,6 +152,14 @@ bld steam match plan --all-unmatched --candidate-images missing --allow-network
 ```
 
 候选会冻结标题、别名、日期、简介、公开 Tag、链接、图片、得分和排序理由。高置信候选可以在计划中自动建议，低置信、DLC、Demo、同名版本和映射冲突必须人工确认。搜索无结果不等于不存在，只有显式 `no-subject` 才会记录为已确认无条目。
+
+批量搜索默认最多 250 项并逐项更新任务进度。“终止整批”适合保守重试；“记录失败并继续”会把单项 transport、timeout、HTTP 或认证失败列入不修改区。连续认证失败会触发熔断，避免重复发出大量无效请求。任务完成但仍有人工作业时会显示“等待人工审核”，不会占用 worker。
+
+顶部“工作台”统一提供任务与计划两个视图。任务生成计划后可直接跳转，计划也会显示来源和 apply/preflight 任务。历史记录可归档恢复；永久删除仅限没有计划、审计或 successor 等引用的终态任务及未执行计划，并会先创建 SQLite 备份。
+
+人工匹配筛选会解释“将修改/不修改”与各原因的含义。每次决定都会生成 successor 草稿，保留当前筛选和页码，并在提交期间锁定按钮以避免重复操作。计划执行可从详情页直接“审阅并开始 Fresh Preflight”；完成后通过页面顶部的确认入口继续，无需手工复制 Plan ID、Job ID 或 nonce。
+
+作品页可按标题、评分、发行时间、Bangumi 收藏更新时间或本地更新时间升降序排列；空评分和空日期始终放在末尾。Steam 库另支持按 AppID、游玩时长、最近游玩、首次/最近发现和匹配状态排序。
 
 Steam 分类到 Bangumi 状态的规则位于 `config/steam.toml`，支持 `exact|contains|regex`、大小写设置和未命中策略。状态计划会为已收藏条目生成 PATCH，为未收藏条目生成 POST；Tag 始终作为独立后续计划。
 

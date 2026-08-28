@@ -85,6 +85,7 @@ Bangumi 写入流程固定为：
 - 标准多选可使用 Ctrl/Command 或 Shift；启用 JavaScript 后，再次添加已选 Tag 即可取消，也可以点击 Tag chip 上的 ×。
 - 个人 Tag 支持“命中全部/任一”和“排除任一”；匹配精确且区分大小写。
 - 每页可选 12/24/48/96 项，支持页码和指定页跳转；筛选条件会随分页保留。
+- 可按标题、评分、发行时间、Bangumi 收藏更新时间和本地更新时间升降序排列；空值固定放在末尾。
 - 查看 Bangumi identity、收藏状态、个人 Tag 和已缓存封面。
 - 编辑 Bangumi 收藏的 LOCAL rating/status/comment/private 字段。
 - 编辑游戏专属的本地 profile、游玩描述和私有备注。
@@ -210,7 +211,11 @@ Steam 页面分为检测、导入、分类、库、未匹配、匹配计划和�
 
 批量匹配支持 AppIDs、分类、分类正则和全部未解决选择器。页面会解释四种范围；全部未解决默认覆盖 eligible 项，硬上限 250，超过时要求缩小范围。`no_subject` 与 deferred 默认不重复出现，也可显式重新纳入。
 
+联网搜索逐项更新进度，并在每项之间检查取消。默认 `fail_fast` 在单项失败后终止整批；需要尽量完成其余条目时可选 `continue`，失败条目会以 transport、timeout、HTTP、标题缺失、无候选或认证不可用等原因进入“不修改”。连续 3 个条目认证失败后会熔断剩余请求。
+
 计划页会冻结候选简介、封面、公开 Tag、链接、得分、首二分差和判定依据。候选图片可选择只登记或仅补齐缺图；自动建议仍可在 apply 前通过 successor draft 改成其他 subject、人工审核、no-subject 或 deferred。
+
+人工审核筛选中的“归属”表示是否进入执行范围，“原因”会同时显示中文释义和内部代码。确认候选、无条目、暂缓或保留人工审核后，页面会锁定当前按钮、防止重复提交，并在 successor 中恢复当前筛选和页码。已处理条目若不再符合当前条件，会从筛选结果消失；页面顶部会明确提示决定已经保存。
 
 Steam match plan 的 apply 只建立本地 identity 映射，不写 Bangumi。
 
@@ -277,22 +282,31 @@ Steam 本地封面扫描位于 Steam 子导航，Bangumi 封面策略位于同�
 可用操作：
 
 - 扫描 Steam `librarycache` 中的本地封面。
+- 使用“Steam 远程封面补全”显式读取公开 Store 元数据和官方 CDN；默认只补当前占位图，已有本地 Steam 或 Bangumi 缓存封面不会重复下载。
 - 显式联网下载最多 200 个已登记的远端图片来源。
 - 校验缓存文件的 SHA-256、MIME、大小和路径。
 - 输入 `PRUNE` 后清理项目私有缓存中的未固定项。
 
 Steam 原始文件不会被删除；SQLite 只保存可移植逻辑定位，不保存机器绝对路径或图片二进制。
 
-### 任务
+### 工作台
 
-所有长时间或联网操作都会进入持久任务。任务页展示：
+顶部“工作台”把任务和计划放在两个视图中。任务生成计划后提供直接入口，计划页也能返回来源任务并查看关联的 preflight/apply 任务；计划工作台每页可显示 25/50/100 项。
+
+计划详情中的主要按钮可把“明确审阅”和“启动 Fresh Preflight”合并为一次确认。Preflight 完成后，继续入口位于任务结果之前；最终确认页自动绑定 Plan ID 与短时 nonce，不需要手工复制 ID。确认弹窗、内容 hash、CSRF、fresh-read、写前备份、逐项验证和审计仍会保留。条目很多时，结果清单会放入固定高度的滚动区域。
+
+所有长时间或联网操作都会进入持久任务。任务视图展示：
 
 - queued/running/succeeded/failed/cancelled/interrupted 状态。
 - 当前阶段、进度和脱敏事件。
 - 脱敏结果，例如新 plan/session ID。
-- queued/running 任务的取消请求。
+- queued/running 任务的取消请求；`cancel_requested` 表示正在等待当前网络请求结束。
 
-程序重启后，遗留的 running job 会标记为 interrupted，不会猜测远端是否成功。请检查审计、fresh status 或重新生成计划后再继续。
+任务完成但仍有 Steam 人工匹配项时会标为“等待人工审核”，此状态不会继续占用后台 worker。人工审核每次只选确认候选、确认无条目、暂缓或保留人工审核中的一个决定；提交会生成 immutable successor，不会直接写 Bangumi。
+
+终态任务和计划可批量归档、恢复。永久删除必须先归档、核对影响清单、输入 `DELETE <数量>` 并创建 SQLite backup；存在计划、审计、reverse、successor 或匹配审核引用的记录只允许归档。
+
+程序重启后，遗留的 running job 会标记为 interrupted，遗留的 cancel_requested 会收敛为 cancelled；两者都不会自动重放。请检查审计、fresh status 或重新生成计划后再继续。
 
 ### 设置、健康状态与帮助
 
@@ -334,6 +348,8 @@ uv run bld db upgrade
 
 可在“图片”页面查看统计并提交校验任务。
 
+若 Steam 客户端没有缓存封面，可在“Steam → 本地图片”选择“全部当前占位图”并提交远程封面任务。任务最多处理 250 项，逐项显示进度；Store 无元数据、图片 404 和传输失败会分别计数。`force refresh` 只应在需要重新获取已登记的 Steam 远程图片时使用。
+
 ### 任务显示 interrupted 或 failed
 
 先查看任务的脱敏错误与事件。对于远端写操作，还应检查计划审计和 fresh status。不要通过重复点击假设请求失败；不确定响应必须先 GET 验证。
@@ -341,6 +357,8 @@ uv run bld db upgrade
 ### 表单按钮无法工作
 
 安全 mutation 表单依赖本地 JavaScript 添加 CSRF header。确认浏览器没有禁用本页 JavaScript，并使用 UI 显示的 `127.0.0.1`/`localhost` 地址访问。
+
+如果错误页显示 `405 Method Not Allowed`，先停止并重启 UI，确保 Python 路由与页面静态资源来自同一版本。错误页会保留脱敏的请求方法和本地路径，便于判断是旧进程还是操作状态不匹配。
 
 ### 打开 Bangumi 后没有登录
 

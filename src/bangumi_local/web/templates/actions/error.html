@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-  <section class="hero"><p class="eyebrow">REQUEST REJECTED</p><h1>操作被拒绝</h1><p>{{ detail }}</p></section>
-  <p><a href="/">返回首页</a></p>
+  <section class="hero"><p class="eyebrow">HTTP {{ status_code or 'ERROR' }}</p><h1>{{ page_title or '操作未完成' }}</h1><p>{{ detail }}</p></section>
+  <section class="panel"><h2>请求信息</h2><dl class="facts"><dt>方法</dt><dd class="mono">{{ request_method or request.method }}</dd><dt>本地路径</dt><dd class="mono break">{{ request_path or request.url.path }}</dd></dl>{% if suggestion %}<p class="safety-note">{{ suggestion }}</p>{% endif %}</section>
+  <p><a href="/workspace">打开工作台</a> · <a href="/">返回首页</a></p>
 {% endblock %}
