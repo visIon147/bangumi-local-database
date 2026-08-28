@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page-heading"><div><p class="eyebrow">{{ report.remote_source }}</p><h1>同步状态</h1></div><a href="/sync">同步配置</a></div>
+  <section class="stats">{% for name, count in report.counts.items() %}<article><strong>{{ count }}</strong><span>{{ name }}</span></article>{% endfor %}</section>
+  <section class="panel table-wrap"><table><thead><tr><th>Subject</th><th>标题</th><th>状态</th><th>变化字段</th></tr></thead><tbody>{% for item in report.items %}<tr><td>{{ item.subject_id }}</td><td>{% if item.work_id %}<a href="/works/{{ item.work_id }}">{{ item.title }}</a>{% else %}{{ item.title }}{% endif %}</td><td><span class="status status-{{ item.diff.status.value }}">{{ item.diff.status.value }}</span></td><td>{{ item.diff.changed_fields|join(', ') or '—' }}</td></tr>{% else %}<tr><td colspan="4">没有收藏。</td></tr>{% endfor %}</tbody></table></section>
+{% endblock %}

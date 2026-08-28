@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-heading"><div><p class="eyebrow">BASE / LOCAL / REMOTE</p><h1>冲突处理</h1></div><span class="badge">{{ conflicts|length }} open</span></section>
+<aside class="safety-note">keep-local/custom 只建立明确的待推送 LOCAL 选择；不会直接写 Bangumi。之后仍须生成、审阅并 apply 独立 sync plan。</aside>
+{% for item in conflicts %}<section class="panel"><h2>Subject {{ item.subject_id }} · {{ item.field }}</h2><dl class="facts"><dt>BASE</dt><dd class="mono">{{ item.base_json }}</dd><dt>LOCAL</dt><dd class="mono">{{ item.local_json }}</dd><dt>REMOTE</dt><dd class="mono">{{ item.remote_json }}</dd></dl><form data-secure-post method="post" action="/sync/conflicts/{{ item.id }}/resolve"><label>处理方式<select name="strategy"><option value="keep_local">保留 LOCAL，稍后生成推送计划</option><option value="keep_remote">采用 REMOTE 到 LOCAL</option><option value="custom">使用自定义 JSON 值</option></select></label><label>自定义 JSON<input name="custom_json" placeholder='例如 8、"comment"、["Tag"]'></label><button>只保存冲突决策</button></form></section>{% else %}<p class="empty">当前没有 open conflict。</p>{% endfor %}
+{% endblock %}

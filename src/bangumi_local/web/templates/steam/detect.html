@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "steam/_nav.html" %}
+<div class="page-heading"><div><p class="eyebrow">Read only</p><h1>Steam 本地检测</h1></div></div>
+<section class="panel">
+  <dl class="facts">
+    <dt>根目录</dt><dd>{{ "已检测" if detection.root_detected else "未检测" }}</dd>
+    <dt>账户数</dt><dd>{{ detection.account_count }}</dd>
+    <dt>账户选择</dt><dd>{{ "已安全选择" if detection.account_selected else "需要配置" }}</dd>
+    <dt>分类来源</dt><dd>{{ detection.category_source }}</dd>
+    <dt>Cloud cache</dt><dd>{{ "可用" if detection.category_file_available else "不可用" }}</dd>
+    <dt>Legacy sharedconfig</dt><dd>{{ "可用" if detection.legacy_file_available else "不可用" }}</dd>
+    <dt>Local config</dt><dd>{{ "可用" if detection.local_config_available else "不可用" }}</dd>
+    <dt>安装 manifest</dt><dd>{{ detection.installed_manifest_count }}</dd>
+  </dl>
+</section>
+<p class="safety-note">机器路径和 Steam account ID 不会发送到页面。</p>
+{% endblock %}

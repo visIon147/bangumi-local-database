@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "steam/_nav.html" %}
+<div class="page-heading"><div><p class="eyebrow">LOCAL metadata</p><h1>Steam 标题补全</h1></div><span class="count">{{ missing_count }} 个未知</span></div>
+<section class="panel">
+  <h2>联网批量补全</h2>
+  <p>只读取 Steam Store 的英文、简中和日文公开标题；不创建 Bangumi 匹配，也不写 Bangumi。人工标题始终优先，后续导入不会覆盖。</p>
+  <form method="post" action="/steam/jobs/titles-complete">
+    <label>目标<select name="selector_mode"><option value="all_missing" selected>全部未知标题</option><option value="appids">指定 AppIDs</option></select></label>
+    <label>AppIDs<input name="appids" placeholder="70,241930（仅指定 AppIDs 时使用）"></label>
+    <label>最大条目<input type="number" name="max_items" min="1" max="250" value="250"></label>
+    <label>请求间隔 ms<input type="number" name="request_delay_ms" min="0" value="250"></label>
+    <label class="check"><input type="checkbox" name="allow_network" value="true"> 明确允许联网</label>
+    <button type="submit">提交标题补全任务</button>
+  </form>
+</section>
+<section class="panel"><h2>仍缺少标题</h2>
+  <p>Store 无结果时，可在对应条目中输入人工标题，再进行 Bangumi 匹配。</p>
+  <div class="table-wrap"><table><thead><tr><th>AppID</th><th>匹配状态</th><th>操作</th></tr></thead><tbody>
+  {% for item in missing %}<tr><td class="mono">{{ item.app_id }}</td><td>{{ item.match_status }}</td><td><a href="/steam/match/{{ item.app_id }}">填写标题 / 审核</a></td></tr>{% else %}<tr><td colspan="3">当前没有未知标题。</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}

@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-heading"><div><p class="eyebrow">{{ job.capability }}</p><h1>{{ job_title }}</h1><p><span class="mono">{{ job.kind }}</span> · <span class="mono">{{ job.id }}</span></p></div><span class="badge">{{ job.status }}</span></section>
+<section class="panel"><h2>进度</h2><p>{{ job.phase or '-' }} · {{ job.progress_current }}{% if job.progress_total is not none %}/{{ job.progress_total }}{% endif %}</p>{% if job.error_message %}<p class="danger">{{ job.error_message }}</p>{% endif %}{% if job.status in ['queued','running'] %}<form data-secure-post method="post" action="/jobs/{{ job.id }}/cancel"><button class="danger" type="submit">请求取消</button></form>{% endif %}</section>
+{% if result %}<section class="panel job-result"><h2>任务结果</h2>
+  {% if result_links %}<nav class="result-actions" aria-label="后续操作">{% for label, href in result_links %}<a class="button-link" href="{{ href }}">{{ label }}</a>{% endfor %}</nav>{% endif %}
+  {% if result_facts %}<dl class="facts result-facts">{% for label, value in result_facts %}<dt>{{ label }}</dt><dd>{{ value if value is not none else '—' }}</dd>{% endfor %}</dl>{% endif %}
+  {% for table in result_tables %}<section class="job-result-table"><h3>{{ table.title }}</h3><div class="table-wrap"><table><thead><tr>{% for column in table.columns %}<th>{{ column }}</th>{% endfor %}</tr></thead><tbody>{% for row in table.rows %}<tr>{% for column in table.columns %}<td>{{ row.get(column, '—') }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div></section>{% endfor %}
+  <details class="raw-result"><summary>查看脱敏原始结果</summary><pre>{{ result | tojson(indent=2) }}</pre></details>
+</section>{% endif %}
+{% if job.status == 'succeeded' and result and job.kind in ['plan_preflight', 'manual_uncollect_preflight'] %}<section class="panel"><h2>继续安全确认</h2><p>核对上方 fresh 结果后，签发绑定当前浏览器和计划内容的五分钟一次性确认。</p><form data-secure-post method="post" action="/plan-actions/{{ result.plan_id }}/{{ 'confirmation' if job.kind == 'plan_preflight' else 'manual-uncollect-confirmation' }}"><input type="hidden" name="preflight_job_id" value="{{ job.id }}"><button>核对结果并继续</button></form></section>{% endif %}
+<section class="panel"><h2>事件</h2><ol class="timeline">{% for event in events %}<li><strong>{{ event.phase or '-' }}</strong> {{ event.message }} <small>{{ event.created_at }}</small></li>{% else %}<li>暂无事件</li>{% endfor %}</ol></section>
+{% endblock %}

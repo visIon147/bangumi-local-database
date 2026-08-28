@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-heading"><div><p class="eyebrow">LOCAL CONFIGURATION</p><h1>设置与诊断</h1><p>凭据只写入本地环境文件，永不回显；保存后需要重启 UI。</p></div></section>
+{% if settings_view.restart_required %}<aside class="safety-note restart-notice"><strong>配置已保存，重启 UI 后生效。</strong> 当前请求和后台 worker 仍使用启动时快照。请在终端按 <code>Ctrl+C</code>，再运行 <code>uv run bld ui serve</code>。</aside>{% endif %}
+{% if not settings_view.editing_enabled %}<aside class="safety-note">当前应用实例没有可编辑的环境文件；请使用 <code>bld ui serve --env-file PATH</code> 启动。</aside>{% endif %}
+
+<section class="panel"><h2>运行状态</h2><dl class="facts">
+  <dt>应用版本</dt><dd>{{ settings_view.version }}</dd>
+  <dt>数据库 schema</dt><dd class="mono">{{ settings_view.schema_revision }}</dd>
+  <dt>Bangumi 配置</dt><dd>{{ '已配置' if settings_view.bangumi_configured else '未完整配置' }}</dd>
+  <dt>Steam 本地读取</dt><dd>{{ '已配置' if settings_view.steam_local_configured else '未配置' }}</dd>
+  <dt>Steam Web 补全</dt><dd>{{ '已配置' if settings_view.steam_web_configured else '未配置' }}</dd>
+</dl>{% if settings_view.bangumi_configured %}<form data-secure-post method="post" action="/settings/auth-check"><button>联网验证 Bangumi 认证</button></form>{% endif %}</section>
+
+<div class="settings-grid">
+<section class="panel"><h2>Bangumi</h2><p>从 <a href="https://next.bgm.tv/demo/access-token" target="_blank" rel="noopener noreferrer">Access Token 页面</a>创建 Token；接口约束见 <a href="https://bangumi.github.io/api/" target="_blank" rel="noopener noreferrer">Bangumi API 文档</a>。</p>
+{% if not settings_view.bangumi_api_official %}<p class="field-warning">当前进程使用非官方 API host。设置页不会编辑该值，也不会把 Token 发送到其他 host。</p>{% endif %}
+<form data-secure-post method="post" action="/settings/bangumi">
+  <label>Access Token {% if settings_view.bangumi_token_configured %}<span class="configured">已配置；留空保持</span>{% endif %}<input type="password" name="access_token" autocomplete="new-password"{% if settings_view.managed.bangumi_token or not settings_view.editing_enabled %} disabled{% endif %}></label>
+  <label class="check"><input type="checkbox" name="clear_access_token" value="true"{% if settings_view.managed.bangumi_token or not settings_view.editing_enabled %} disabled{% endif %}> 清除本地环境文件中的 Token</label>
+  <label>Username {% if settings_view.managed.bangumi_username %}<span class="managed">由进程环境管理</span>{% endif %}<input name="username" value="{{ settings_view.bangumi_username }}"{% if settings_view.managed.bangumi_username or not settings_view.editing_enabled %} disabled{% endif %}></label>
+  <label>User-Agent {% if settings_view.managed.bangumi_user_agent %}<span class="managed">由进程环境管理</span>{% endif %}<input name="user_agent" value="{{ settings_view.bangumi_user_agent }}" placeholder="user/bangumi-local-database/1.0 (local-private-project)"{% if settings_view.managed.bangumi_user_agent or not settings_view.editing_enabled %} disabled{% endif %}></label>
+  <label>网页域名 {% if settings_view.managed.bangumi_web_base %}<span class="managed">由进程环境管理</span>{% endif %}<select name="web_base_url"{% if settings_view.managed.bangumi_web_base or not settings_view.editing_enabled %} disabled{% endif %}>{% for value in settings_view.bangumi_web_base_urls %}<option value="{{ value }}"{% if settings_view.bangumi_web_base_url == value %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+  <button{% if not settings_view.editing_enabled %} disabled{% endif %}>保存 Bangumi 配置</button>
+</form></section>
+
+<section class="panel"><h2>Steam</h2><p>手机令牌、API Key 注册、account ID 与 Steam ID64 的查找步骤见 <a href="/help/steam-setup">Steam 配置指南</a>。建议先按指南核对两个账户 ID，再保存配置。</p>
+<form data-secure-post method="post" action="/settings/steam">
+  <label>Steam 根目录 {% if settings_view.managed.steam_root %}<span class="managed">由进程环境管理</span>{% endif %}<input name="steam_root" value="{{ settings_view.steam_root }}" placeholder="D:\Program Files (x86)\Steam"{% if settings_view.managed.steam_root or not settings_view.editing_enabled %} disabled{% endif %}></label>
+  <label>userdata account ID {% if settings_view.managed.steam_account_id %}<span class="managed">由进程环境管理</span>{% endif %}<input name="account_id" inputmode="numeric" value="{{ settings_view.steam_account_id }}"{% if settings_view.managed.steam_account_id or not settings_view.editing_enabled %} disabled{% endif %}></label>
+  <label>Steam ID64 {% if settings_view.managed.steam_id64 %}<span class="managed">由进程环境管理</span>{% endif %}<input name="steam_id64" inputmode="numeric" value="{{ settings_view.steam_id64 }}"{% if settings_view.managed.steam_id64 or not settings_view.editing_enabled %} disabled{% endif %}></label>
+  <label>Steam Web API Key {% if settings_view.steam_api_key_configured %}<span class="configured">已配置；留空保持</span>{% endif %}<input type="password" name="web_api_key" autocomplete="new-password"{% if settings_view.managed.steam_api_key or not settings_view.editing_enabled %} disabled{% endif %}></label>
+  <label class="check"><input type="checkbox" name="clear_web_api_key" value="true"{% if settings_view.managed.steam_api_key or not settings_view.editing_enabled %} disabled{% endif %}> 清除本地环境文件中的 API Key</label>
+  <button{% if not settings_view.editing_enabled %} disabled{% endif %}>保存 Steam 配置</button>
+</form></section>
+</div>
+
+<section class="panel"><h2>安全默认值</h2><form class="settings-form-grid" data-secure-post method="post" action="/settings/safety">
+  <label>Bangumi 请求超时（秒）{% if settings_view.managed.request_timeout %}<span class="managed">环境管理</span>{% endif %}<input type="number" name="request_timeout" min="0.1" step="0.1" value="{{ settings_view.request_timeout }}"{% if settings_view.managed.request_timeout or not settings_view.editing_enabled %} disabled{% endif %}></label>
+  <label>远端写入间隔（ms）{% if settings_view.managed.write_delay %}<span class="managed">环境管理</span>{% endif %}<input type="number" name="write_delay_ms" min="0" value="{{ settings_view.write_delay_ms }}"{% if settings_view.managed.write_delay or not settings_view.editing_enabled %} disabled{% endif %}></label>
+  <label>最大重试{% if settings_view.managed.max_retries %}<span class="managed">环境管理</span>{% endif %}<input type="number" name="max_retries" min="0" max="10" value="{{ settings_view.max_retries }}"{% if settings_view.managed.max_retries or not settings_view.editing_enabled %} disabled{% endif %}></label>
+  <label>退避基数（秒）{% if settings_view.managed.retry_base %}<span class="managed">环境管理</span>{% endif %}<input type="number" name="retry_base_seconds" min="0.1" step="0.1" value="{{ settings_view.retry_base_seconds }}"{% if settings_view.managed.retry_base or not settings_view.editing_enabled %} disabled{% endif %}></label>
+  <label>默认图片策略{% if settings_view.managed.image_policy %}<span class="managed">环境管理</span>{% endif %}<select name="image_policy"{% if settings_view.managed.image_policy or not settings_view.editing_enabled %} disabled{% endif %}>{% for value in ['none','metadata','cache'] %}<option value="{{ value }}"{% if settings_view.image_policy == value %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+  <label>单图上限（bytes）{% if settings_view.managed.image_item_limit %}<span class="managed">环境管理</span>{% endif %}<input type="number" name="image_item_limit" min="1024" value="{{ settings_view.image_item_limit }}"{% if settings_view.managed.image_item_limit or not settings_view.editing_enabled %} disabled{% endif %}></label>
+  <label>缓存预算（bytes）{% if settings_view.managed.image_cache_limit %}<span class="managed">环境管理</span>{% endif %}<input type="number" name="image_cache_limit" min="1024" value="{{ settings_view.image_cache_limit }}"{% if settings_view.managed.image_cache_limit or not settings_view.editing_enabled %} disabled{% endif %}></label>
+  <button{% if not settings_view.editing_enabled %} disabled{% endif %}>保存安全默认值</button>
+</form></section>
+
+<section class="panel"><h2>Steam 默认状态规则</h2>{% if settings_view.steam_rules_error %}<p class="field-warning">{{ settings_view.steam_rules_error }}</p>{% elif settings_view.steam_rules %}<form data-secure-post data-steam-rules-form method="post" action="/settings/steam-rules">
+  <section class="rule-editor" data-rule-editor><div class="table-wrap"><table><thead><tr><th>匹配</th><th>关键词 / 正则</th><th>目标状态</th><th>大小写敏感</th><th></th></tr></thead><tbody data-rule-rows>{% for rule in settings_view.steam_rules.rules %}<tr data-rule-row><td><select data-rule-match>{% for value in ['exact','contains','regex'] %}<option value="{{ value }}"{% if rule.match == value %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></td><td><input data-rule-pattern value="{{ rule.pattern }}" maxlength="200"></td><td><select data-rule-status>{% for value in ["wish","done","doing","on-hold","dropped"] %}<option value="{{ value }}"{% if rule.status.label == value %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></td><td><input type="checkbox" data-rule-case-sensitive{% if rule.case_sensitive %} checked{% endif %}></td><td><button type="button" class="secondary" data-rule-remove>移除</button></td></tr>{% endfor %}</tbody></table></div><button type="button" class="secondary" data-rule-add>添加规则</button></section>
+  <input type="hidden" name="rules_json" data-rules-json value="">
+  <label>默认未命中策略<select name="remaining_status"><option value="">仅留本地</option>{% for value in ["wish","done","doing","on-hold","dropped"] %}<option value="{{ value }}"{% if settings_view.steam_rules.remaining_status and settings_view.steam_rules.remaining_status.label == value %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+  <label class="check"><input type="checkbox" name="allow_network" value="true"{% if settings_view.steam_rules.allow_network %} checked{% endif %}> Steam 默认允许网络补全</label>
+  <button>保存 Steam 默认规则</button>
+</form>{% endif %}</section>
+
+<aside class="safety-note">数据库 URL、plan/backup/media 目录不会在网页中修改。数据库迁移仍通过 <code>bld db upgrade</code> 完成；远端写入仍只能从已审阅计划的安全确认页进入。</aside>
+{% endblock %}

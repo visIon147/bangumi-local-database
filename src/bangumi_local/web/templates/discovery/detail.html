@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+  <section class="hero"><p class="eyebrow">{{ discovery.provider }} · {{ discovery.status }}</p><h1>探索会话</h1><p>played/not_played/unsure/deferred 只记录本地证据；played 不会自动变为 done。</p></section>
+  {% if candidate %}
+    <nav class="queue-navigation" aria-label="探索队列导航">
+      {% if previous_position %}<a class="button-link" href="?position={{ previous_position }}">← 上一个</a>{% else %}<span></span>{% endif %}
+      <strong>{{ selected_position }} / {{ discovery.item_count }}</strong>
+      {% if next_position %}<a class="button-link" href="?position={{ next_position }}">下一个 →</a>{% else %}<span></span>{% endif %}
+      <form method="get" class="queue-jump"><label>跳转到<input name="position" type="number" min="1" max="{{ discovery.item_count }}" value="{{ selected_position }}"></label><button>跳转</button></form>
+      <a href="/discovery/sessions/{{ discovery.id }}">前往下一待处理项</a>
+    </nav>
+    <article class="queue-card" data-candidate-id="{{ candidate.row.id }}">
+      <div class="queue-cover"><img src="{{ candidate.cover_src }}" alt="{{ candidate.row.title }} 封面"></div>
+      <div class="queue-content">
+        <p class="eyebrow">priority {{ candidate.row.priority_score }} · {{ candidate.row.item_status }}</p>
+        <h2>{{ candidate.row.title }}</h2>
+        <p>{% if candidate.row.subject_id %}<a href="/out/bangumi/{{ candidate.row.subject_id }}" target="_blank" rel="noopener noreferrer">在 Bangumi 打开</a>{% endif %}{% if candidate.evidence.steam_app_id %}{% if candidate.row.subject_id %} · {% endif %}<a href="https://store.steampowered.com/app/{{ candidate.evidence.steam_app_id }}" target="_blank" rel="noopener noreferrer">在 Steam 打开</a>{% endif %}</p>
+        <div class="queue-summary" tabindex="0">{{ candidate.row.summary or '暂无简介。' }}</div>
+        {% if candidate.tags %}<p>公开标签：{{ candidate.tags|join(' · ') }}</p>{% endif %}
+        <details><summary>来源证据</summary><dl>{% for key, value in candidate.evidence.items() %}<dt>{{ key }}</dt><dd>{{ value }}</dd>{% endfor %}</dl></details>
+        <div class="inline-actions">
+          {% if candidate.row.cover_url %}<form data-json-post method="post" action="/discovery/sessions/{{ discovery.id }}/cache-images"><input type="hidden" name="scope" value="current"><input type="hidden" name="candidate_id" value="{{ candidate.row.id }}"><button>联网补齐当前图片</button></form>{% endif %}
+          {% if discovery.item_count <= 200 %}<form data-json-post method="post" action="/discovery/sessions/{{ discovery.id }}/cache-images"><input type="hidden" name="scope" value="session"><button>联网补齐队列图片</button></form>{% endif %}
+        </div>
+        {% if candidate.row.item_status == 'pending' %}<form data-json-post data-reload="true" method="post" action="/discovery/sessions/{{ discovery.id }}/candidates/{{ candidate.row.id }}/decide"><label>决定<select name="decision">{% for decision in decisions %}<option value="{{ decision }}">{{ decision }}</option>{% endfor %}</select></label><label>私有原因<textarea name="reason"></textarea></label><button>保存本地决定</button></form>{% else %}<p>本项已处理：{{ candidate.row.decision or candidate.row.item_status }}</p>{% endif %}
+        <p><a href="/discovery/candidates/{{ candidate.row.id }}/promotion">查看 Promotion 状态</a>。身份确认与 status 草稿始终为两个动作。</p>
+      </div>
+    </article>
+  {% else %}<section class="panel"><p>会话中没有候选。</p></section>{% endif %}
+  <section class="panel danger-zone"><h2>删除整个探索队列</h2><p>删除 session 与候选卡片；全局决定、私有理由与审核事件会保留。删除前自动创建 SQLite 备份。</p><form data-json-post data-success-url="/discovery" method="post" action="/discovery/sessions/{{ discovery.id }}/delete"><label>输入完整 Session ID 确认<input name="confirm_session_id" autocomplete="off" required></label><button>备份并删除此队列</button></form></section>
+{% endblock %}

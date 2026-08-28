@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+  <section class="hero">
+    <p class="eyebrow">本地只读概览</p>
+    <h1>收藏与工作流</h1>
+    <p>远端修改仍必须进入独立计划审阅与确认流程。</p>
+  </section>
+  <section class="stats" aria-label="数据库统计">
+    <article><strong>{{ counts.works }}</strong><span>作品</span></article>
+    <article><strong>{{ counts.collections }}</strong><span>Bangumi 收藏</span></article>
+    <article><strong>{{ counts.draft_plans }}</strong><span>待审阅计划</span></article>
+    <article><strong>{{ counts.reviewed_plans }}</strong><span>可执行计划</span></article>
+    <article><strong>{{ counts.rating_queues }}</strong><span>活跃评分队列</span></article>
+    <article><strong>{{ counts.discovery_sessions }}</strong><span>活跃探索会话</span></article>
+  </section>
+{% endblock %}

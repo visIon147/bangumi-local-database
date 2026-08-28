@@ -1,0 +1,5 @@
+# Keep design material versioned during development, but omit it from release archives.
+/prompts export-ignore
+/docs export-ignore
+/AGENTS.md export-ignore
+/MANIFEST.md export-ignore

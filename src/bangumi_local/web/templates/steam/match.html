@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "steam/_nav.html" %}
+<div class="page-heading"><div><p class="eyebrow">Identity review</p><h1>{{ item.title }}</h1></div><span class="status">{{ item.match_status }}</span></div>
+<section class="detail-grid">
+  <article class="panel">
+    <img class="cover" src="{{ item.cover_src }}" alt="">
+    <h2>Steam AppID {{ item.app_id }}</h2>
+    <p>游玩：{{ item.playtime_minutes or 0 }} 分钟</p><p>安装：{{ "是" if item.installed else "否/未知" }}</p>
+    <div class="tag-list">{% for name in item.collections %}<span>{{ name }}</span>{% endfor %}</div>
+    <form method="post" action="/steam/titles/{{ item.app_id }}/manual">
+      <label>LOCAL 人工标题<input name="title" maxlength="500" required value="{{ item.title if not item.title.startswith('Steam App ') else '' }}"></label>
+      <button type="submit">保存人工标题</button>
+    </form>
+    <form method="post" action="/steam/titles/{{ item.app_id }}/clear"><button class="secondary" type="submit">清除人工优先标记</button></form>
+  </article>
+  <div>
+    <form class="panel" method="post" action="/steam/jobs/match-search">
+      <h2>重新搜索候选</h2><input type="hidden" name="app_id" value="{{ item.app_id }}">
+      <label>自定义查询<input name="query"></label><label>候选数<input type="number" name="limit" min="1" max="50" value="10"></label>
+      <label><input type="checkbox" name="allow_network" value="true"> 允许联网</label><button type="submit">提交搜索任务</button>
+    </form>
+    <form class="panel" method="post" action="/steam/jobs/match-confirm">
+      <h2>人工确认 subject</h2><input type="hidden" name="app_id" value="{{ item.app_id }}"><input name="subject_id" type="number" min="1" required>
+      <label><input type="checkbox" name="allow_network" value="true"> 允许 fresh 验证</label><button type="submit">提交确认任务</button>
+    </form>
+    <div class="panel"><h2>本地处置</h2>
+      <form method="post" action="/steam/match/{{ item.app_id }}/no-subject"><input name="reason" placeholder="可选理由"><button type="submit">确认无条目</button></form>
+      <form method="post" action="/steam/match/{{ item.app_id }}/defer"><input name="reason" placeholder="可选理由"><button type="submit">延后</button></form>
+      <form method="post" action="/steam/match/{{ item.app_id }}/reopen"><input name="reason" placeholder="可选理由"><button type="submit">重新打开</button></form>
+    </div>
+  </div>
+</section>
+<section class="panel"><h2>Bangumi 候选</h2><p class="empty">自动/人工标签是默认 95 分、20 分 margin、精确且无风险降权规则的预评估；最终以不可变匹配 plan 为准。</p></section>
+<div class="cards">
+{% for candidate in item.candidates %}
+  <article class="work-card"><a href="/out/bangumi/{{ candidate.subject_id }}" target="_blank" rel="noopener noreferrer"><img src="{{ candidate.cover_src }}" alt=""><div>
+    <span class="badge">#{{ candidate.rank }} · {{ candidate.score }} 分</span><h2>{{ candidate.title }}</h2><p>{{ candidate.title_original }}</p>
+    <p>{{ candidate.release_date or "日期未知" }} · margin {{ candidate.margin_from_next }}</p>
+    {% if candidate.aliases %}<p>别名：{{ candidate.aliases|join(' · ') }}</p>{% endif %}
+    {% if candidate.public_tags %}<div class="tag-list">{% for tag in candidate.public_tags %}<span>{{ tag }}</span>{% endfor %}</div>{% endif %}
+    {% if candidate.summary %}<p class="summary-scroll">{{ candidate.summary }}</p>{% endif %}
+    <span class="status">{{ "自动候选" if candidate.review_mode == "automatic_candidate" else "人工审核" }}</span>
+    <div class="tag-list">{% for reason in candidate.reasons %}<span>{{ reason }}</span>{% endfor %}</div>
+  </div></a></article>
+{% else %}<p class="empty">尚无持久化候选，请先提交联网搜索任务。</p>{% endfor %}
+</div>
+<section class="panel"><h2>修改已有匹配计划</h2>
+  <form method="post" action="/steam/match/revise">
+    <label>Plan ID<input name="plan_id" minlength="36" maxlength="36" required></label><input type="hidden" name="app_id" value="{{ item.app_id }}">
+    <label>Subject ID<input type="number" min="1" name="subject_id"></label>
+    <label><input type="checkbox" name="manual_review" value="true"> 保持人工审核</label>
+    <label><input type="checkbox" name="no_subject" value="true"> 无 Bangumi 条目</label>
+    <label><input type="checkbox" name="defer" value="true"> 延后</label>
+    <label><input type="checkbox" name="allow_network" value="true"> Subject fresh 验证</label>
+    <button type="submit">生成 successor draft</button>
+  </form>
+</section>
+{% endblock %}

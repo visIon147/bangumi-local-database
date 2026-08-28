@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+  <section class="hero">
+    <p class="eyebrow">固定数据集 · 可恢复</p>
+    <h1>评分队列</h1>
+    <p>评分、跳过和暂缓只修改 LOCAL；同步必须另行生成并审阅计划。</p>
+  </section>
+  <section class="panel">
+    <h2>新建队列</h2>
+    <p>默认选择所有非 wish 收藏。联网 enrichment 会转交后台任务，页面请求本身不会访问网络。</p>
+    <form data-json-post data-success-prefix="/rating/queues/" method="post" action="/rating/queues">
+      <fieldset><legend>Subject 类型</legend>{% for value, label in [(1,'book'),(2,'anime'),(3,'music'),(4,'game'),(6,'real')] %}<label class="check"><input type="checkbox" name="subject_types" value="{{ value }}" data-type="number" data-array="true" checked>{{ label }}</label>{% endfor %}</fieldset>
+      <fieldset><legend>收藏状态</legend>{% for value, label in [(2,'done'),(3,'doing'),(4,'on-hold'),(5,'dropped')] %}<label class="check"><input type="checkbox" name="collection_statuses" value="{{ value }}" data-type="number" data-array="true" checked>{{ label }}</label>{% endfor %}</fieldset>
+      <label>排序<select name="order">{% for order in orders %}<option value="{{ order }}">{{ order }}</option>{% endfor %}</select></label>
+      <label>随机 seed（random 时必填）<input name="seed" type="number" data-type="number"></label>
+      <label>最多条目<input name="max_items" type="number" min="1" max="10000" data-type="number"></label>
+      <label class="check"><input name="include_deferred" type="checkbox" data-type="boolean">包含 deferred</label>
+      <label class="check"><input name="allow_network" type="checkbox" data-type="boolean">联网补全展示信息（上限 200）</label>
+      <button type="submit">建立固定队列</button>
+    </form>
+  </section>
+  <section class="card-grid" aria-label="评分队列列表">
+    {% for queue in sessions %}
+      <article class="card">
+        <h2><a href="/rating/queues/{{ queue.id }}">{{ queue.id }}</a></h2>
+        <p>{{ queue.status }} · {{ queue.item_count }} 项 · cursor {{ queue.cursor_position }}</p>
+        <p>{{ queue.order_name }}</p>
+      </article>
+    {% else %}
+      <p>尚无评分队列。</p>
+    {% endfor %}
+  </section>
+{% endblock %}

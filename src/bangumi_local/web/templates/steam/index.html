@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "steam/_nav.html" %}
+<section class="page-heading">
+  <div><p class="eyebrow">Local evidence</p><h1>Steam 工作台</h1></div>
+</section>
+<section class="stats">
+  <article><strong>{{ summary.entry_count }}</strong><span>库条目</span></article>
+  <article><strong>{{ summary.collection_count }}</strong><span>有效分类</span></article>
+  <article><strong>{{ summary.installed_count }}</strong><span>已安装</span></article>
+  <article><strong>{{ summary.categorized_count }}</strong><span>已分类</span></article>
+  <article><strong>{{ summary.matched_count }}</strong><span>已确认匹配</span></article>
+</section>
+<section class="panel">
+  <h2>匹配状态</h2>
+  <div class="tag-list">
+    {% for item in summary.match_status_counts %}<span>{{ item.name }}：{{ item.count }}</span>{% else %}<span>尚无导入数据</span>{% endfor %}
+  </div>
+</section>
+<p class="safety-note">所有远端状态操作只生成不可变计划；此工作台不直接 apply Bangumi 写入。</p>
+{% endblock %}

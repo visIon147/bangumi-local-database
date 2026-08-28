@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page-heading"><div><p class="eyebrow">IMMUTABLE PLANS</p><h1>计划中心</h1></div><span>{{ total }} 份</span></div>
+  <form class="filters compact-filters" method="get" action="/plans">
+    <label>关键词<input name="q" value="{{ q }}" placeholder="Plan ID / 类型 / 操作"></label>
+    <label>状态<select name="status"><option value="">全部</option>{% for value in statuses %}<option value="{{ value }}"{% if status == value %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+    <label>类型<select name="kind"><option value="">全部</option>{% for value in kinds %}<option value="{{ value }}"{% if kind == value %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+    <label>每页<select name="page_size">{% for value in [15,30,60,100] %}<option value="{{ value }}"{% if page_size == value %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+    <button type="submit">筛选</button>
+  </form>
+  <div class="panel table-wrap"><table><thead><tr><th>计划</th><th>类型</th><th>格式</th><th>状态</th><th>创建时间</th></tr></thead><tbody>{% for plan in plans %}<tr><td><a class="mono" href="/plans/{{ plan.id }}">{{ plan.id }}</a></td><td>{{ plan.kind }} · {{ plan.operation }}</td><td>v{{ plan.format_version }}</td><td><span class="status status-{{ plan.status }}">{{ plan.status }}</span></td><td>{{ plan.created_at }}</td></tr>{% else %}<tr><td colspan="5">没有计划。</td></tr>{% endfor %}</tbody></table></div>
+  <nav class="pagination" aria-label="分页">{% if has_previous %}<a href="/plans?page={{ page - 1 }}&page_size={{ page_size }}&status={{ status }}&kind={{ kind }}&q={{ q|urlencode }}">上一页</a>{% endif %}<span>第 {{ page }} 页</span>{% if has_next %}<a href="/plans?page={{ page + 1 }}&page_size={{ page_size }}&status={{ status }}&kind={{ kind }}&q={{ q|urlencode }}">下一页</a>{% endif %}</nav>
+{% endblock %}

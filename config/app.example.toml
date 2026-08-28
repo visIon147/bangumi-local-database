@@ -1,0 +1,23 @@
+[bangumi]
+base_url = "https://api.bgm.tv"
+request_timeout_seconds = 20
+write_delay_ms = 500
+max_retries = 4
+
+[sync]
+auto_push = false
+create_remote_collections = false
+allow_remote_delete = false
+
+[storage]
+database_url = "sqlite:///./data/gamevault.db"
+plan_directory = "plans"
+backup_directory = "backups"
+
+[agent]
+remote_write = false
+candidate_tags_default_scope = "local"
+
+[ui]
+host = "127.0.0.1"
+port = 8765

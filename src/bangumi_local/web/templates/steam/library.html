@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "steam/_nav.html" %}
+<div class="page-heading"><div><p class="eyebrow">Local mirror</p><h1>{{ page_title }}</h1></div><span class="count">{{ items|length }}</span></div>
+{% if not unmatched_only %}
+<form class="filters" method="get" action="/steam/library">
+  <label>精确分类<input name="collection" value="{{ collection }}"></label>
+  <label>分类正则<input name="collection_regex" value="{{ collection_regex }}"></label>
+  <label>匹配状态<select name="match_status"><option value="">全部</option>{% for value in ["unmatched","candidates","confirmed","no_subject","deferred"] %}<option value="{{ value }}" {% if match_status == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+  <button type="submit">筛选</button>
+</form>
+{% endif %}
+<div class="cards">
+{% for item in items %}
+  <article class="work-card"><a href="/steam/match/{{ item.row.app_id }}"><img src="{{ item.cover_src }}" alt=""><div>
+    <span class="badge">AppID {{ item.row.app_id }}</span><h2>{{ item.row.title or "未知标题" }}</h2>
+    <p>{{ item.row.match_status }} · {{ item.row.playtime_minutes or 0 }} min</p>
+    <div class="tag-list">{% for name in item.row.collections %}<span>{{ name }}</span>{% endfor %}</div>
+  </div></a></article>
+{% else %}<p class="empty">没有符合条件的条目。</p>{% endfor %}
+</div>
+{% endblock %}

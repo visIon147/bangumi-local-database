@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+  <article class="detail-grid">
+    <img class="cover" src="{{ cover_src }}" alt="{{ work.title }} 封面">
+    <div>
+      <p class="eyebrow">{{ work.kind }} · LOCAL WORK {{ work.id }}</p>
+      <h1>{{ work.title }}</h1>
+      {% if work.title_original and work.title_original != work.title %}<p>{{ work.title_original }}</p>{% endif %}
+      <div class="tag-list">{% for tag in tags %}<span>{{ tag.name }}</span>{% else %}<span>无标签</span>{% endfor %}</div>
+      {% if subject %}<p><a href="/out/bangumi/{{ subject.subject_id }}" target="_blank" rel="noopener noreferrer">在 Bangumi 打开 subject {{ subject.subject_id }}</a> · <a href="/sync/collection/{{ subject.subject_id }}/edit">编辑 LOCAL 收藏</a></p>{% endif %}
+      <dl class="facts"><dt>发行日期</dt><dd>{{ work.release_date or '—' }}</dd><dt>收藏状态</dt><dd>{{ collection.bgm_collection_type if collection else '—' }}</dd><dt>个人评分</dt><dd>{{ collection.rating if collection and collection.rating else '—' }}</dd></dl>
+    </div>
+  </article>
+  <section class="panel"><h2>简介</h2><p class="summary">{{ work.summary or '暂无简介。' }}</p></section>
+  <section class="panel"><h2>外部链接</h2><ul>{% for link in links %}<li>{{ link.source }}：<a href="{{ link.url }}" target="_blank" rel="noopener noreferrer">{{ link.url }}</a></li>{% else %}<li>暂无外部链接。</li>{% endfor %}</ul></section>
+  {% if work.kind == 'game' %}<section class="panel"><h2>本地游戏画像</h2><form data-secure-post method="post" action="/works/{{ work.id }}/game-profile"><label>置信度<select name="confidence">{% for value in ['unknown','low','medium','high','confirmed'] %}<option value="{{ value }}" {% if profile and profile.confidence == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label><label>完成度<select name="completion">{% for value in ['unknown','unplayed','playing','completed','dropped','paused'] %}<option value="{{ value }}" {% if profile and profile.completion == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label><label>游玩分钟<input name="playtime_minutes" type="number" min="0" value="{{ profile.playtime_minutes if profile and profile.playtime_minutes is not none else '' }}"></label><label>喜欢要素（逗号）<input name="liked_aspects"></label><label>不喜欢要素（逗号）<input name="disliked_aspects"></label><label>私有备注<textarea name="notes_private">{{ profile.notes_private if profile else '' }}</textarea></label><button>只保存 LOCAL</button></form></section>{% endif %}
+  <section class="panel"><h2>最近远端操作</h2><table><thead><tr><th>时间</th><th>状态</th><th>方法</th><th>HTTP</th></tr></thead><tbody>{% for operation in operations %}<tr><td>{{ operation.started_at }}</td><td>{{ operation.status }}</td><td>{{ operation.request_method or '—' }}</td><td>{{ operation.http_status or '—' }}</td></tr>{% else %}<tr><td colspan="4">无审计操作。</td></tr>{% endfor %}</tbody></table></section>
+{% endblock %}

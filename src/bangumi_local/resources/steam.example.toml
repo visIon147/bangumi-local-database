@@ -1,0 +1,17 @@
+[steam]
+allow_network = false
+
+[[steam.status_rules]]
+match = "contains"
+pattern = "完结"
+status = "done"
+case_sensitive = true
+
+[[steam.status_rules]]
+match = "exact"
+pattern = "在用"
+status = "doing"
+case_sensitive = true
+
+# Omit remaining_status to keep unmatched entries local-only.
+# remaining_status = "wish"

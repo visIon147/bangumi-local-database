@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% from "components/tag_picker.html" import tag_picker %}
+{% block content %}
+  <div class="page-heading"><div><p class="eyebrow">LOCAL MIRROR</p><h1>作品</h1></div><span>{{ total }} 项</span></div>
+  <form class="filters works-filters" method="get" action="/works">
+    <div class="works-filter-basics">
+      <label>标题<input name="q" value="{{ q }}" maxlength="200" placeholder="搜索标题"></label>
+      <label>类型<select name="kind"><option value="">全部</option>{% for value, label in kinds %}<option value="{{ value }}"{% if kind == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+      <label>来源<select name="source"><option value="all"{% if source == 'all' %} selected{% endif %}>全部</option><option value="bangumi"{% if source == 'bangumi' %} selected{% endif %}>Bangumi</option><option value="steam"{% if source == 'steam' %} selected{% endif %}>Steam</option></select></label>
+      <label>每页<select name="page_size">{% for value in page_sizes %}<option value="{{ value }}"{% if page_size == value %} selected{% endif %}>{{ value }} 项</option>{% endfor %}</select></label>
+    </div>
+    <details class="works-filter-advanced"{% if selected_statuses or included_tags or excluded_tags or tag_include_mode != 'all' %} open{% endif %}>
+      <summary>高级筛选{% if selected_statuses or included_tags or excluded_tags %} <span class="filter-active">已启用</span>{% endif %}</summary>
+      <p class="field-hint">收藏状态使用标准多选：按住 Ctrl（macOS 为 Command）逐项选择，按住 Shift 连续选择；启用 JavaScript 后，Tag 再次添加即可取消。</p>
+      <div class="works-filter-advanced-grid">
+        <label>收藏状态<select name="collection_status" multiple size="5">{% for value, label in collection_statuses %}<option value="{{ value }}"{% if value in selected_statuses %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+        {{ tag_picker('tag_include', '包含个人 Tag', personal_tags, included_tags) }}
+        <label>包含规则<select name="tag_include_mode"><option value="all"{% if tag_include_mode == 'all' %} selected{% endif %}>命中全部</option><option value="any"{% if tag_include_mode == 'any' %} selected{% endif %}>命中任一</option></select></label>
+        {{ tag_picker('tag_exclude', '排除个人 Tag', personal_tags, excluded_tags) }}
+      </div>
+    </details>
+    <div class="filter-actions"><button type="submit">筛选</button><a class="button-link secondary" href="/works">清除全部条件</a></div>
+  </form>
+  <section class="cards">
+    {% for item in items %}
+      <article class="work-card">
+        <a href="/works/{{ item.row.work_id }}">
+          <img src="{{ item.cover_src }}" alt="" loading="lazy">
+          <div><span class="badge">{{ item.row.kind }}</span><h2>{{ item.row.title }}</h2><p>评分 {{ item.row.rating or '—' }}</p>
+            {% if item.row.tags %}<div class="card-tags" aria-label="个人 Tag">{% for tag in item.row.tags[:6] %}<span class="tag-chip">{{ tag }}</span>{% endfor %}{% if item.row.tags|length > 6 %}<span class="tag-chip muted">+{{ item.row.tags|length - 6 }}</span>{% endif %}</div>{% endif %}
+          </div>
+        </a>
+      </article>
+    {% else %}<p class="empty">没有符合条件的作品。</p>{% endfor %}
+  </section>
+  <div class="pagination-row">
+    <nav class="pagination" aria-label="分页">
+      {% if previous_url %}<a href="{{ previous_url }}">上一页</a>{% endif %}
+      {% for number, url in page_links %}<a href="{{ url }}"{% if number == page %} aria-current="page" class="current"{% endif %}>{{ number }}</a>{% endfor %}
+      {% if next_url %}<a href="{{ next_url }}">下一页</a>{% endif %}
+      <span>第 {{ page }} / {{ page_count }} 页</span>
+    </nav>
+    <form class="page-jump" method="get" action="/works">
+      {% for name, value in filter_pairs %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+      <label>跳至第 <input name="page" type="number" min="1" max="{{ page_count }}" value="{{ page }}"> 页</label><button type="submit">跳转</button>
+    </form>
+  </div>
+{% endblock %}

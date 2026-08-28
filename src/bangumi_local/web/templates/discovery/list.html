@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+  <section class="hero">
+    <p class="eyebrow">有界探索 · 本地决定</p>
+    <h1>探索队列</h1>
+    <p>Steam 创建为本地操作；Bangumi 搜索和 browse 必须显式许可网络并由后台任务完成。</p>
+  </section>
+  <section class="panel">
+    <h2>创建入口</h2>
+    <p>Steam 只按本地游玩证据建立候选；Bangumi Search 必须有关键词；Browse 必须至少填写年份或平台。两种 Bangumi provider 都固定为 game、默认排除 NSFW，硬上限 200。缓存图片只补齐缺图，不会热链远端图片。</p>
+    <div class="action-grid">
+      <form data-json-post data-success-prefix="/discovery/sessions/" method="post" action="/discovery/sessions/steam"><h3>Steam 证据</h3><label class="check"><input name="include_owned_unplayed" type="checkbox" data-type="boolean">包含 owned 但无游玩证据</label><label>上限<input name="max_items" type="number" value="50" min="1" max="200" data-type="number"></label><button>创建本地队列</button></form>
+      <form data-json-post method="post" action="/discovery/sessions/search"><h3>Bangumi 搜索</h3><label>关键词（必填，不允许无界搜索）<input name="query" required></label><label>公开 Tags（逗号）<input name="public_tags" data-type="csv-string"></label><label>起始年份<input name="year_from" type="number" data-type="number"></label><label>结束年份<input name="year_to" type="number" data-type="number"></label><label>最少评分人数<input name="min_rating_count" type="number" data-type="number"></label><label>排序<select name="sort"><option>match</option><option>heat</option><option>rank</option><option>score</option></select></label><label>上限<input name="max_items" type="number" value="50" min="1" max="200" data-type="number"></label><label class="check"><input name="cache_images" type="checkbox" data-type="boolean">创建后缓存候选缺失图片</label><input name="allow_network" type="hidden" value="true" data-type="boolean"><button>联网创建任务</button></form>
+      <form data-json-post method="post" action="/discovery/sessions/browse"><h3>Bangumi Browse</h3><p>年份与平台至少填写一项。</p><label>年份<input name="year" type="number" data-type="number"></label><label>平台<input name="platform"></label><label>排序<select name="sort"><option>rank</option><option>date</option></select></label><label>上限<input name="max_items" type="number" value="50" min="1" max="200" data-type="number"></label><label class="check"><input name="cache_images" type="checkbox" data-type="boolean">创建后缓存候选缺失图片</label><input name="allow_network" type="hidden" value="true" data-type="boolean"><button>联网创建任务</button></form>
+    </div>
+  </section>
+  <section class="card-grid" aria-label="探索会话列表">
+    {% for item in sessions %}
+      <article class="card">
+        <h2><a href="/discovery/sessions/{{ item.id }}">{{ item.provider }}</a></h2>
+        <p>{{ item.status }} · {{ item.item_count }} 项 · cursor {{ item.cursor_position }}</p>
+      </article>
+    {% else %}
+      <p>尚无探索会话。</p>
+    {% endfor %}
+  </section>
+{% endblock %}

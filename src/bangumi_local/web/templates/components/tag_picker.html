@@ -1,0 +1,21 @@
+{% macro tag_picker(name, label, tags, selected) -%}
+<fieldset class="tag-picker" data-tag-picker>
+  <legend>{{ label }}</legend>
+  <div class="tag-picker-enhancement" hidden>
+    <label>选择 Tag
+      <input type="search" list="{{ name }}-candidates" data-tag-input autocomplete="off" placeholder="输入或选择个人 Tag">
+    </label>
+    <button type="button" class="secondary" data-tag-add>添加 / 取消</button>
+    <p class="field-hint tag-picker-hint">选择未选 Tag 会添加；再次选择已选 Tag 会取消。也可点击下方 ×。</p>
+    <div class="tag-picker-chips" data-tag-chips aria-live="polite"></div>
+  </div>
+  <datalist id="{{ name }}-candidates">
+    {% for item in tags %}<option value="{{ item.name }}">{{ item.count }} 项</option>{% endfor %}
+  </datalist>
+  <label class="tag-picker-fallback">个人 Tag（可多选）<span class="field-hint">按 Ctrl/Command 逐项选择，按 Shift 连续选择。</span>
+    <select name="{{ name }}" multiple size="6" data-tag-select>
+      {% for item in tags %}<option value="{{ item.name }}"{% if item.name in selected %} selected{% endif %}>{{ item.name }}（{{ item.count }}）</option>{% endfor %}
+    </select>
+  </label>
+</fieldset>
+{%- endmacro %}

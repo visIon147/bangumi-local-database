@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "steam/_nav.html" %}
+<div class="page-heading"><div><p class="eyebrow">QUEUED · NO REQUEST-TIME NETWORK</p><h1>后台任务已入队</h1></div></div>
+<section class="panel"><dl class="facts"><dt>Job ID</dt><dd><a class="mono" href="/jobs/{{ job.job_id }}">{{ job.job_id }}</a></dd><dt>任务</dt><dd>{{ job.kind }}</dd><dt>需要网络</dt><dd>{{ "是" if job.requires_network else "否" }}</dd><dt>远端写入</dt><dd>{{ "禁止" if not job.remote_writes else "是" }}</dd><dt>参数</dt><dd class="mono break">{{ job.canonical_parameters }}</dd></dl></section>
+<p class="safety-note">HTTP request transaction 内没有联网。后台任务将完成读取或生成草稿；它不会自动 review/apply 计划。</p>
+{% endblock %}

@@ -1,0 +1,4 @@
+<article class="plan-item">
+  <header><div><strong>{{ item.title }}</strong>{% if item.subject_id %}<a href="/out/bangumi/{{ item.subject_id }}" target="_blank" rel="noopener noreferrer">subject {{ item.subject_id }}</a>{% endif %}</div><span>{{ item.reason }}</span></header>
+  <dl class="facts"><dt>字段</dt><dd>{{ item.changed_fields|join(', ') or '—' }}</dd><dt>操作</dt><dd class="mono break">{{ item.action }}</dd><dt>Before</dt><dd class="mono break">{{ item.before_snapshot.to_json() if item.before_snapshot else '—' }}</dd><dt>Intended</dt><dd class="mono break">{{ item.intended_snapshot.to_json() if item.intended_snapshot else '—' }}</dd></dl>
+</article>

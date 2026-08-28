@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page-heading"><div><p class="eyebrow">PLAN ACTIONS · {{ stored.plan.status }}</p><h1 class="mono">{{ stored.plan.id }}</h1></div><a href="/plans/{{ stored.plan.id }}">返回计划预览</a></div>
+  <aside class="safety-note">所有表单均受 CSRF/Origin 检查。Review 与 Apply 必须输入完整 Plan ID；Apply 还必须使用 fresh preflight 签发的一次性 nonce。</aside>
+  <div class="action-grid">
+    <section class="panel"><h2>Review</h2><p>仅将 immutable draft 标记为 reviewed，不写 Bangumi。</p><form method="post" action="/plan-actions/{{ stored.plan.id }}/review" data-secure-post><label>完整 Plan ID<input name="confirmation_plan_id" autocomplete="off"></label><button{% if stored.plan.status != 'draft' %} disabled{% endif %}>标记已审阅</button></form></section>
+    <section class="panel"><h2>Fresh preflight</h2><p>逐项 fresh-read 后展示最终将修改与 stale 项，并签发短时 nonce。</p><form method="post" action="/plan-actions/{{ stored.plan.id }}/preflight" data-secure-post><button{% if stored.plan.status not in ['reviewed','partial'] %} disabled{% endif %}>开始 preflight 任务</button></form></section>
+    <section class="panel"><h2>签发确认</h2><p>Preflight 任务成功后，输入其 Job ID，签发绑定本浏览器、短时且单次使用的 nonce。</p><form method="post" action="/plan-actions/{{ stored.plan.id }}/confirmation" data-secure-post><label>Preflight Job ID<input name="preflight_job_id" autocomplete="off"></label><button{% if stored.plan.status not in ['reviewed','partial'] %} disabled{% endif %}>核对结果并签发</button></form></section>
+    <section class="panel"><h2>Apply</h2><p>只接受 fresh preflight 结果，不允许降级执行。</p><form method="post" action="/plan-actions/{{ stored.plan.id }}/apply" data-secure-post><label>完整 Plan ID<input name="confirmation_plan_id" autocomplete="off"></label><label>一次性 nonce<input name="confirmation_nonce" autocomplete="off"></label><button{% if stored.plan.status not in ['reviewed','partial'] %} disabled{% endif %}>提交 Apply worker</button></form></section>
+    <section class="panel"><h2>Recovery draft</h2><p>针对 uncertain 审计生成独立恢复草稿，不自动执行。</p><form method="post" action="/plan-actions/{{ stored.plan.id }}/recovery" data-secure-post><button>生成 Recovery 任务</button></form></section>
+    <section class="panel"><h2>网页取消收藏核对</h2><p>公共 v0 无 DELETE；只在用户已于网页取消后 fresh 验证并对齐 LOCAL。</p><form method="post" action="/plan-actions/{{ stored.plan.id }}/manual-uncollect-preflight" data-secure-post><button{% if stored.plan.kind != 'reverse' or stored.plan.format_version < 3 %} disabled{% endif %}>Fresh 验证网页已取消</button></form></section>
+  </div>
+{% endblock %}

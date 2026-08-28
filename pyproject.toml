@@ -1,0 +1,69 @@
+[project]
+name = "bangumi-local-database"
+version = "1.0.0"
+description = "Auditable local mirror and safe sync engine for Bangumi collections"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.13",
+    "fastapi>=0.116",
+    "httpx>=0.27",
+    "jinja2>=3.1",
+    "markdown-it-py>=3.0",
+    "pydantic-settings>=2.6",
+    "python-multipart>=0.0.20",
+    "sqlalchemy>=2.0",
+    "tomlkit>=0.13",
+    "typer>=0.12",
+    "uvicorn>=0.35",
+]
+
+[project.scripts]
+bld = "bangumi_local.cli:app"
+bgv = "bangumi_local.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bangumi_local"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"alembic/env.py" = "bangumi_local/migrations/env.py"
+"alembic/script.py.mako" = "bangumi_local/migrations/script.py.mako"
+"alembic/versions" = "bangumi_local/migrations/versions"
+"alembic.ini" = "bangumi_local/migrations/alembic.ini"
+"README.md" = "bangumi_local/web/content/README.md"
+"UI_GUIDE.md" = "bangumi_local/web/content/UI_GUIDE.md"
+"STEAM_SETUP.md" = "bangumi_local/web/content/STEAM_SETUP.md"
+"CHANGELOG.md" = "bangumi_local/web/content/CHANGELOG.md"
+"LICENSE" = "bangumi_local/web/content/LICENSE"
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "/dist*",
+    "/AGENTS.md",
+    "/MANIFEST.md",
+    "/docs",
+    "/prompts",
+    "/data",
+    "/backups",
+    "/plans",
+    "/exports",
+    "/logs",
+    "/cache",
+    "/media-cache",
+    "/covers",
+]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]

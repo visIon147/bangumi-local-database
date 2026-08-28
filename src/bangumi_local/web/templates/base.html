@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ request.state.csrf_token }}">
+    <title>{{ page_title }} · Bangumi Local Database</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}?v=phase82">
+    <link rel="stylesheet" href="{{ url_for('static', path='/actions.css') }}?v=phase82">
+    <script src="{{ url_for('static', path='/app.js') }}?v=phase82" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/">Bangumi Local Database</a>
+      <nav aria-label="主导航">
+        <a href="/works">作品</a>
+        <a href="/sync">同步</a>
+        <a href="/tags">Tags</a>
+        <a href="/steam">Steam</a>
+        <a href="/rating">评分</a>
+        <a href="/discovery">探索</a>
+        <a href="/jobs">任务</a>
+        <a href="/plans">计划</a>
+        <a href="/settings">设置</a>
+        <a href="/help">帮助</a>
+        <a href="/health">健康状态</a>
+      </nav>
+    </header>
+    <main>{% block content %}{% endblock %}</main>
+    <noscript><p class="noscript">安全 mutation 表单需要本地 JavaScript 添加 CSRF header；当前浏览器已禁用 JavaScript。</p></noscript>
+  </body>
+</html>

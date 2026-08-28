@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "steam/_nav.html" %}
+<div class="page-heading"><div><p class="eyebrow">Plan only</p><h1>Steam 批量匹配计划</h1></div></div>
+<form class="panel" method="post" action="/steam/jobs/match-plan">
+  <h2>目标（四选一）</h2>
+  <p class="safety-note">AppIDs：精确小批量；分类：某一完整分类名；分类正则：按多个分类名筛选；全部未解决：所有尚未确认的条目。四项只能选择一项。</p>
+  <label>目标方式<select name="selector_mode"><option value="all_unmatched" selected>全部未解决</option><option value="appids">指定 AppIDs</option><option value="collection">精确 Steam 分类</option><option value="collection_regex">Steam 分类正则</option></select></label>
+  <label>AppIDs<input name="appids" placeholder="70,241930（仅指定 AppIDs 时使用）"></label><label>分类<input name="collection" placeholder="仅精确分类时使用"></label><label>分类正则<input name="collection_regex" placeholder="仅分类正则时使用"></label>
+  <label><input type="checkbox" name="include_no_subject" value="true"> 重新纳入已标记“无 Bangumi 条目”的项目</label>
+  <label><input type="checkbox" name="include_deferred" value="true"> 重新纳入已暂缓项目</label>
+  <h2>自动匹配策略</h2>
+  <label>分数阈值<input type="number" name="auto_threshold" min="0" max="100" value="95"></label><label>最小 margin<input type="number" name="min_margin" min="0" max="100" value="20"></label><label><input type="checkbox" name="allow_nonexact_auto" value="true"> 允许非精确自动候选</label>
+  <label>每项候选数<input type="number" name="limit" min="1" max="50" value="10"></label><label>Offset<input type="number" name="offset" min="0" value="0"></label><label>最大条目<input type="number" name="max_items" min="1" max="250" value="250"></label><label>请求间隔 ms<input type="number" name="request_delay_ms" min="0" value="250"></label>
+  <label>候选图片<select name="candidate_image_policy"><option value="none">不登记图片</option><option value="metadata" selected>登记链接，不下载</option><option value="cache">只补齐尚未缓存的候选图</option></select></label>
+  <p class="safety-note">一次最多 250 项；选择范围超过上限时会拒绝，并要求使用 AppIDs、分类或 Offset 稳定分批。人工审核项会在计划工作台展示候选证据。</p>
+  <label><input type="checkbox" name="allow_network" value="true"> 明确允许联网</label><button type="submit">提交后台计划任务</button>
+</form>
+{% endblock %}

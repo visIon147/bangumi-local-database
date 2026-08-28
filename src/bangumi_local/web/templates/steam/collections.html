@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "steam/_nav.html" %}
+<div class="page-heading"><div><p class="eyebrow">Local mirror</p><h1>Steam 分类</h1></div><span class="count">{{ items|length }}</span></div>
+<div class="table-wrap"><table>
+  <thead><tr><th>名称</th><th>类型</th><th>状态</th><th>条目</th></tr></thead>
+  <tbody>{% for item in items %}<tr><td><a href="/steam/library?collection={{ item.name|urlencode }}">{{ item.name }}</a></td><td>{{ item.kind }}</td><td>{{ "active" if item.active else "inactive" }}</td><td>{{ item.active_entries }}</td></tr>{% else %}<tr><td colspan="4" class="empty">尚无分类</td></tr>{% endfor %}</tbody>
+</table></div>
+{% endblock %}

@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "steam/_nav.html" %}
+<div class="page-heading"><div><p class="eyebrow">No writes</p><h1>导入预览结果</h1></div></div>
+<section class="stats">
+  <article><strong>{{ summary.entries_seen }}</strong><span>发现条目</span></article>
+  <article><strong>{{ summary.new_entries }}</strong><span>新增条目</span></article>
+  <article><strong>{{ summary.updated_entries }}</strong><span>更新条目</span></article>
+  <article><strong>{{ summary.collections_seen }}</strong><span>发现分类</span></article>
+  <article><strong>{{ summary.membership_changes }}</strong><span>成员变化</span></article>
+</section>
+<p class="safety-note">LOCAL writes performed: 0（dry-run）；Bangumi requests performed: 0。</p>
+{% endblock %}

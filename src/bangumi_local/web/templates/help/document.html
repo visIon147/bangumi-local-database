@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-heading help-heading">
+  <div><p class="eyebrow">{{ document.filename }} · BUNDLED PUBLIC DOCUMENT</p><h1>{{ document.title }}</h1><p>{{ document.description }}</p></div>
+  <nav class="document-switcher" aria-label="帮助文档切换"><a href="/help/ui-guide">UI 指南</a><a href="/help/steam-setup">Steam 配置</a><a href="/help/readme">README</a><a href="/help/changelog">变更记录</a><a href="/help/license">许可</a><a href="/help">全部文档</a></nav>
+</section>
+<article class="panel markdown-body">{{ document_html }}</article>
+{% endblock %}

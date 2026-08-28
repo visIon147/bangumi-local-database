@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <p class="eyebrow">PUBLIC DOCUMENTATION · OFFLINE</p>
+  <h1>帮助文档</h1>
+  <p>以下内容随公开 release 一同发布，并打包在当前安装中；打开页面不会联网。</p>
+</section>
+<section class="help-grid" aria-label="公开帮助文档">
+{% for document in documents %}
+  <article class="panel help-card">
+    <p class="eyebrow">{{ document.filename }}</p>
+    <h2><a href="/help/{{ document.slug }}">{{ document.title }}</a></h2>
+    <p>{{ document.description }}</p>
+    <a class="button-link" href="/help/{{ document.slug }}">打开文档</a>
+  </article>
+{% endfor %}
+</section>
+{% endblock %}

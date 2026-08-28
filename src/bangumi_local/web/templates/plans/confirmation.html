@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-heading"><div><p class="eyebrow">FRESH PREFLIGHT VERIFIED</p><h1>Apply 确认</h1></div><span class="badge">{{ result.will_modify_count }} 可安全修改</span></section>
+<aside class="safety-note">此 nonce 仅显示在本页、绑定当前浏览器与计划内容、五分钟内有效且只能使用一次。Apply worker 仍会再次执行 fresh preflight。</aside>
+<section class="panel"><h2>最终数量</h2><p>将修改 {{ result.will_modify_count }}；不修改/已 stale {{ result.unchanged_count }}。</p>
+{% if result.will_modify %}<h3>本次将修改</h3><ul>{% for item in result.will_modify %}<li>Subject {{ item.subject_id }} · {{ item.title }}</li>{% endfor %}</ul>{% endif %}
+{% if result.unchanged %}<h3>本次不修改</h3><ul>{% for item in result.unchanged %}<li>Subject {{ item.subject_id }} · {{ item.title }} · {{ item.reason }}</li>{% endfor %}</ul>{% endif %}
+<form method="post" action="{{ submit_action }}" data-secure-post><label>完整 Plan ID<input name="confirmation_plan_id" autocomplete="off" required></label><input type="hidden" name="confirmation_nonce" value="{{ nonce }}"><button>{{ operation_label }}</button></form></section>
+{% endblock %}

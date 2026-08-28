@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-heading">
+  <div><p class="eyebrow">DURABLE JOBS</p><h1>后台任务</h1></div>
+  <form method="get"><select name="status"><option value="">全部状态</option>{% for value in statuses %}<option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select><button type="submit">筛选</button></form>
+</section>
+<section class="panel">
+  <table><thead><tr><th>类型</th><th>能力</th><th>状态</th><th>进度</th><th>创建时间</th></tr></thead>
+  <tbody>{% for job in jobs %}<tr><td><a href="/jobs/{{ job.id }}">{{ kind_labels.get(job.kind, job.kind) }}</a><br><small class="muted mono">{{ job.kind }}</small></td><td>{{ job.capability }}</td><td><span class="badge">{{ job.status }}</span></td><td>{{ job.progress_current }}{% if job.progress_total is not none %}/{{ job.progress_total }}{% endif %}</td><td>{{ job.created_at }}</td></tr>{% else %}<tr><td colspan="5">暂无任务</td></tr>{% endfor %}</tbody></table>
+</section>
+{% endblock %}

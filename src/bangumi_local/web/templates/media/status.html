@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+  <section class="hero">
+    <p class="eyebrow">本地媒体缓存</p>
+    <h1>图片状态</h1>
+    <p>打开本页不会扫描 Steam，也不会访问远端图片地址。</p>
+  </section>
+  <section class="stats" aria-label="图片缓存统计">
+    <article><strong>{{ summary.source_count }}</strong><span>图片来源</span></article>
+    <article><strong>{{ summary.cached_source_count }}</strong><span>已缓存来源</span></article>
+    <article><strong>{{ summary.blob_count }}</strong><span>去重文件</span></article>
+    <article><strong>{{ summary.total_bytes }}</strong><span>缓存字节</span></article>
+    <article><strong>{{ summary.failed_source_count }}</strong><span>失败</span></article>
+    <article><strong>{{ summary.missing_source_count }}</strong><span>远端缺失</span></article>
+  </section>
+  <section class="panel" id="steam-media">
+    <h2>Steam 本地图片</h2>
+    <p>Steam 扫描可以选择 none、metadata 或 cache；只读取本地 librarycache。</p>
+    <form data-json-post data-reload="true" method="post" action="/media/scan"><label>Steam AppIDs（逗号；空为全部）<input name="app_ids" data-type="csv-string"></label><label>策略<select name="policy"><option value="none">不处理</option><option value="metadata" selected>仅元数据</option><option value="cache">复制到项目缓存</option></select></label><button>扫描本地 Steam 图片</button></form>
+  </section>
+  <section class="panel" id="remote-media">
+    <h2>Bangumi / 远端图片</h2>
+    <p>默认复用缓存。远端图片下载必须显式提交带网络许可的任务，空 Source IDs 只选择缺失项。</p>
+    <form data-json-post method="post" action="/media/fetch"><label>Source IDs（逗号；空为最多 200 个缺失项）<input name="source_ids" data-type="csv-string"></label><input type="hidden" name="allow_network" value="true" data-type="boolean"><button>联网下载图片任务</button></form>
+  </section>
+  <section class="panel">
+    <h2>高级缓存维护</h2>
+    <form data-secure-post method="post" action="/media/verify"><button>后台校验缓存 hash / MIME / 路径</button></form>
+    <form data-secure-post method="post" action="/media/prune"><label>目标缓存上限（bytes；空为配置值）<input name="max_bytes" type="number" min="0"></label><label>输入 PRUNE 确认只清理项目私有缓存<input name="confirm" autocomplete="off" required></label><button class="danger">提交缓存清理任务</button></form>
+  </section>
+{% endblock %}

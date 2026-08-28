@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "steam/_nav.html" %}
+<div class="page-heading"><div><p class="eyebrow">Plan only</p><h1>Steam → Bangumi 状态计划</h1></div></div>
+<form class="panel" method="post" action="/steam/jobs/status-plan" data-secure-post data-steam-rules-form>
+  <label>AppIDs<input name="appids" placeholder="70,241930"></label><label><input type="checkbox" name="all_eligible" value="true"> 全部符合规则条目</label>
+  <label>规则来源<select name="rule_mode" data-rule-mode><option value="saved">使用设置页默认规则</option><option value="custom">仅本次自定义规则</option></select></label>
+  <section class="rule-summary" data-saved-rule-summary><h2>当前默认规则</h2><ul>{% for rule in saved_rules %}<li><code>{{ rule.match }}</code> “{{ rule.pattern }}” → <strong>{{ rule.status }}</strong>{% if not rule.case_sensitive %}（忽略大小写）{% endif %}</li>{% endfor %}</ul><p>默认未命中策略：{{ saved_remaining_status or '仅留本地' }}</p></section>
+  <section class="rule-editor" data-rule-editor hidden><div class="table-wrap"><table><thead><tr><th>匹配</th><th>关键词 / 正则</th><th>目标状态</th><th>大小写敏感</th><th></th></tr></thead><tbody data-rule-rows>{% for rule in saved_rules %}<tr data-rule-row><td><select data-rule-match>{% for value in ['exact','contains','regex'] %}<option value="{{ value }}"{% if rule.match == value %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></td><td><input data-rule-pattern value="{{ rule.pattern }}" maxlength="200"></td><td><select data-rule-status>{% for value in ["wish","done","doing","on-hold","dropped"] %}<option value="{{ value }}"{% if rule.status == value %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></td><td><input type="checkbox" data-rule-case-sensitive{% if rule.case_sensitive %} checked{% endif %}></td><td><button type="button" class="secondary" data-rule-remove>移除</button></td></tr>{% endfor %}</tbody></table></div><button type="button" class="secondary" data-rule-add>添加规则</button></section>
+  <input type="hidden" name="rules_json" data-rules-json value="">
+  <label>未命中规则时<select name="remaining_policy"><option value="default">使用保存的默认策略</option><option value="local">仅留本地</option>{% for value in ["wish","done","doing","on-hold","dropped"] %}<option value="{{ value }}">{{ value }}</option>{% endfor %}</select></label>
+  <label>成功后独立 Tag 草稿<input name="add_tag" placeholder="普通Game分类"></label>
+  <button type="submit">提交状态计划任务</button>
+</form>
+<p class="safety-note">任务只生成 plan，不 review、不 apply。规则、来源和 hash 会写入计划；Tag 始终是状态验证后的独立草稿。</p>
+{% endblock %}

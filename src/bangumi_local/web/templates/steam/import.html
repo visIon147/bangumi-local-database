@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "steam/_nav.html" %}
+<div class="page-heading"><div><p class="eyebrow">Dry run</p><h1>Steam 导入预览</h1></div></div>
+<form class="panel" method="post" action="/steam/import/preview">
+  <label><input type="checkbox" name="allow_network" value="true"> 允许网络补全</label>
+  <label><input type="checkbox" name="apply_local" value="true"> 审核后写入 LOCAL（不写 Bangumi）</label>
+  <p class="empty">默认仅读取本地 Steam 文件并计算变化，不写 LOCAL，不访问 Bangumi。联网请求会转交后台任务边界。</p>
+  <button type="submit">生成预览或 LOCAL 导入任务</button>
+</form>
+{% endblock %}

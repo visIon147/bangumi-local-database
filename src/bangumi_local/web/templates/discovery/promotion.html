@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-heading"><div><p class="eyebrow">EXPLICIT PROMOTION</p><h1>建立身份与状态草稿</h1></div><span class="badge">{{ preview.status }}</span></section>
+<section class="panel"><p>{{ preview.detail }}</p><dl class="facts"><dt>Candidate</dt><dd class="mono">{{ preview.candidate_id }}</dd><dt>Work</dt><dd>{{ preview.work_id or '-' }}</dd><dt>Subject</dt><dd>{{ preview.subject_id or '-' }}</dd><dt>Steam entry</dt><dd>{{ preview.library_entry_id or '-' }}</dd></dl></section>
+<div class="action-grid">
+  <section class="panel"><h2>1. 显式建立身份</h2><form data-json-post method="post" action="/discovery/candidates/{{ preview.candidate_id }}/identity"><label>Bangumi Subject ID（Steam 候选必填）<input name="subject_id" type="number" min="1" data-type="number"></label><input type="hidden" name="allow_network" value="true" data-type="boolean"><button>Fresh 验证并建立本地身份</button></form></section>
+  <section class="panel"><h2>2. 独立状态草稿</h2><p>仅在身份已建立后可用；不会从 played 自动推断。</p><form data-json-post method="post" action="/discovery/candidates/{{ preview.candidate_id }}/status-draft"><label>Bangumi 状态<select name="status">{% for value in statuses %}<option value="{{ value }}">{{ value }}</option>{% endfor %}</select></label><input type="hidden" name="allow_network" value="true" data-type="boolean"><button>生成不可变状态计划任务</button></form></section>
+</div>
+{% endblock %}

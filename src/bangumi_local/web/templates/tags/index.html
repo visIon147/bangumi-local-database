@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page-heading"><div><p class="eyebrow">PLAN ONLY</p><h1>批量 Tag</h1></div><a href="/plans">计划中心</a></div>
+  <aside class="safety-note">Tag 操作只生成不可变计划。公开 Tag 与个人 Tag 是两个独立参数；请避免与 Bangumi 大小写 TagIndex 碰撞。</aside>
+  <div class="action-grid">
+    <section class="panel"><h2>添加 / 删除 / 重命名</h2><form method="post" action="/tags/bulk" data-secure-post><label>操作<select name="operation"><option value="add">添加</option><option value="remove">删除</option><option value="rename">重命名</option></select></label><label>Tag（添加/删除）<input name="tag" maxlength="120"></label><label>旧 Tag（重命名）<input name="old_tag" maxlength="120"></label><label>新 Tag（重命名）<input name="new_tag" maxlength="120"></label><label>Bangumi 类型<select name="subject_type"><option value="">全部类型</option>{% for value, label in subject_types %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label><label>范围<select name="selector_mode"><option value="ids">指定 Subject IDs</option><option value="all_current">当前类型全部收藏</option><option value="public_tag">当前类型公开 Tag 命中项</option></select></label><label>Subject IDs<input name="subject_ids" placeholder="101,102"></label><label>作为判断条件的公开 Tag<input name="public_tag" maxlength="120"></label><button>生成计划任务</button></form></section>
+    <section class="panel"><h2>游戏分类</h2><p>只检查缺少两个个人分类 marker 的游戏；公开 Tag 未命中不会自动添加普通游戏标签。</p><form method="post" action="/tags/classify-games" data-secure-post><label>公共 Tag 依据<input name="public_tag" value="Galgame"></label><label>Galgame 个人 Tag<input name="galgame_tag" value="{{ galgame_tag }}"></label><label>普通游戏个人 Tag<input name="game_tag" value="{{ game_tag }}"></label><button>生成分类计划任务</button></form></section>
+  </div>
+{% endblock %}

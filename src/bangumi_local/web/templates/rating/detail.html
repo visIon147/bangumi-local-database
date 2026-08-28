@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+  <section class="hero">
+    <p class="eyebrow">{{ queue.status }}</p>
+    <h1>评分队列</h1>
+    <p>{{ counts.pending }} 待处理 · {{ counts.rated }} 已评分 · {{ counts.skipped }} 跳过 · {{ counts.deferred }} 暂缓 · {{ counts.stale }} stale</p>
+  </section>
+  {% if item %}
+    <nav class="queue-navigation" aria-label="评分队列导航">
+      {% if previous_position %}<a class="button-link" href="?position={{ previous_position }}">← 上一个</a>{% else %}<span></span>{% endif %}
+      <strong>{{ selected_position }} / {{ counts.total }}</strong>
+      {% if next_position %}<a class="button-link" href="?position={{ next_position }}">下一个 →</a>{% else %}<span></span>{% endif %}
+      <form method="get" class="queue-jump"><label>跳转到<input name="position" type="number" min="1" max="{{ counts.total }}" value="{{ selected_position }}"></label><button>跳转</button></form>
+      <a href="/rating/queues/{{ queue.id }}">前往下一待处理项</a>
+    </nav>
+    <article class="queue-card" data-subject-id="{{ item.row.subject_id }}">
+      <div class="queue-cover"><img src="{{ item.cover_src }}" alt="{{ item.snapshot.title }} 封面"></div>
+      <div class="queue-content">
+        <p class="eyebrow">Subject {{ item.row.subject_id }} · {{ item.row.item_status }}{% if item.row.outcome %} · {{ item.row.outcome }}{% endif %}</p>
+        <h2>{{ item.snapshot.title }}</h2>
+        <p><a href="/out/bangumi/{{ item.row.subject_id }}" target="_blank" rel="noopener noreferrer">在 Bangumi 打开</a></p>
+        {% if item.snapshot.title_original %}<p>原名：{{ item.snapshot.title_original }}</p>{% endif %}
+        {% if item.snapshot.release_date %}<p>发行：{{ item.snapshot.release_date }}</p>{% endif %}
+        {% if item.snapshot.score %}<p>Bangumi {{ item.snapshot.score }} · rank {{ item.snapshot.rank or '-' }} · {{ item.snapshot.rating_count or 0 }} 人评分</p>{% endif %}
+        {% if item.snapshot.public_tags %}<p>公开标签：{{ item.snapshot.public_tags|join(' · ') }}</p>{% endif %}
+        <p>入队时 LOCAL：评分 {{ item.initial.rate or '-' }} · 状态 {{ item.initial.type or '-' }}{% if item.initial.comment %} · comment：{{ item.initial.comment }}{% endif %}</p>
+        <div class="queue-summary" tabindex="0">{{ item.snapshot.summary or '暂无简介。' }}</div>
+        <p>展示信息：{{ item.row.enrichment_status }}{% if item.row.error %} · {{ item.row.error }}{% endif %}</p>
+        <div class="inline-actions">
+          <form data-json-post method="post" action="/rating/queues/{{ queue.id }}/enrich"><input type="hidden" name="scope" value="current"><input type="hidden" name="subject_id" value="{{ item.row.subject_id }}" data-type="number"><input type="hidden" name="cache_image" value="true" data-type="boolean"><button>联网补全当前项与缺失图片</button></form>
+          {% if counts.total <= 200 %}<form data-json-post method="post" action="/rating/queues/{{ queue.id }}/enrich"><input type="hidden" name="scope" value="session"><input type="hidden" name="cache_image" value="true" data-type="boolean"><button>联网补全整个队列（{{ counts.total }} 项）</button></form>{% else %}<p>整个队列超过 200 项，只能补全当前项。</p>{% endif %}
+        </div>
+        {% if item.row.item_status == 'pending' %}
+          <fieldset class="queue-action-choice" data-rating-action-selector><legend>本条操作</legend><label><input type="radio" name="rating_action" value="rate" checked>评分</label><label><input type="radio" name="rating_action" value="skip">跳过</label><label><input type="radio" name="rating_action" value="defer">暂缓</label></fieldset>
+          <div data-rating-action-panel="rate">
+            <form data-json-post data-reload="true" method="post" action="/rating/queues/{{ queue.id }}/subjects/{{ item.row.subject_id }}/rate">
+              <label>评分（1–10）<input name="score" type="number" min="1" max="10" required data-type="number"></label>
+              <label>私有理由（不会导出或上传）<textarea name="reason"></textarea></label>
+              <label class="check"><input name="skip_reason" type="checkbox" data-type="boolean">本次明确不写理由</label>
+              <details><summary>可选：公开 comment</summary>
+                {% if item.initial.comment %}<p class="field-warning">当前已有 comment。默认保持不变；覆盖时必须填写完整新 comment 并勾选确认。</p>{% else %}<label class="check"><input name="publish_reason" type="checkbox" data-type="boolean">comment 为空时将私有理由复制为公开 comment</label>{% endif %}
+                <label class="check"><input type="checkbox" data-public-comment-toggle>填写完整公开 comment</label>
+                <label data-public-comment-fields hidden>完整公开 comment<textarea name="public_comment" disabled></textarea></label>
+                {% if item.initial.comment %}<label class="check" data-public-comment-fields hidden><input name="replace_existing_comment" type="checkbox" data-type="boolean" disabled>显式替换已有 comment</label>{% endif %}
+              </details>
+              <button type="submit">只保存 LOCAL 评分</button>
+            </form>
+          </div>
+          <div data-rating-action-panel="skip" hidden><form data-json-post data-reload="true" method="post" action="/rating/queues/{{ queue.id }}/subjects/{{ item.row.subject_id }}/skip"><label>私有原因（可选）<textarea name="reason"></textarea></label><button>跳过</button></form></div>
+          <div data-rating-action-panel="defer" hidden><form data-json-post data-reload="true" method="post" action="/rating/queues/{{ queue.id }}/subjects/{{ item.row.subject_id }}/defer"><label>私有原因（可选）<textarea name="reason"></textarea></label><button>暂缓</button></form></div>
+        {% else %}<p>该条目已处理；如需再次进入，请使用 reopen。</p>{% endif %}
+      </div>
+    </article>
+  {% else %}<section class="panel"><p>队列为空。</p></section>{% endif %}
+  <section class="panel"><h2>同步</h2><p>完成评分后只能生成 rate/comment v2 草稿，不能绕过 Plan Review。</p><form data-secure-post method="post" action="/rating/queues/{{ queue.id }}/sync-plan"><button>生成评分同步计划任务</button></form></section>
+{% endblock %}

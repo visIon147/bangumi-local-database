@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page-heading"><div><p class="eyebrow">LOCAL ONLY</p><h1>编辑收藏 {{ subject_id }}</h1></div><a href="/sync/status?subject_id={{ subject_id }}">查看 Diff</a></div>
+  <aside class="safety-note">保存只修改 LOCAL，不访问 Bangumi。远端同步仍需独立 Sync Plan。</aside>
+  <form class="panel edit-form" method="post" action="/sync/collection/{{ subject_id }}/edit" data-secure-post>
+    <label>评分（1–10）<input type="number" name="rating" min="1" max="10" value="{{ state.rating or '' }}"></label>
+    <label class="check"><input type="checkbox" name="clear_rating" value="true">清除评分</label>
+    <label>收藏状态<select name="status"><option value="">保持不变</option>{% for name, value in statuses.items() %}<option value="{{ name }}"{% if state.bgm_collection_type == value %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></label>
+    <label>公开评论<textarea name="comment" rows="7">{{ state.comment or '' }}</textarea></label>
+    <label class="check"><input type="checkbox" name="clear_comment" value="true">清除评论</label>
+    <label>隐私<select name="privacy"><option value="unchanged">保持不变</option><option value="private">私密</option><option value="public">公开</option></select></label>
+    <button>保存 LOCAL</button>
+  </form>
+{% endblock %}
